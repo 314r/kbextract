@@ -173,6 +173,8 @@ ApplicationWindow {
             }
 
             ColumnLayout {
+                id: sourceLayout
+
                 anchors.fill: parent
                 anchors.margins: 16
                 spacing: 12
@@ -312,6 +314,8 @@ ApplicationWindow {
                 }
 
                 Item {
+                    id: bookListArea
+
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
@@ -385,6 +389,11 @@ ApplicationWindow {
                         ScrollBar.vertical: ScrollBar {
                             id: bookListVerticalScrollBar
 
+                            parent: sourcePanel
+                            x: sourcePanel.width - width
+                            y: sourceLayout.y + bookListArea.y
+                            height: bookListArea.height
+                            z: 2
                             policy: ScrollBar.AsNeeded
                             padding: 2
 
