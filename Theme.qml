@@ -52,8 +52,8 @@ QtObject {
     readonly property color previewControl: omarchyMode ? omarchyPalette.dark_background : (darkMode ? "#bb111111" : "#337ca1be")
     readonly property color previewControlBorder: omarchyMode ? omarchyPalette.bright_foreground : (darkMode ? "#b3d3e5" : "#b3d2e6")
     readonly property color previewText: omarchyMode ? omarchyPalette.foreground : (darkMode ? text : "#ffffff")
-    readonly property string uiFont: "Barlow"
-    readonly property string monoFont: "JetBrains Mono"
+    readonly property string uiFont: "sans-serif"
+    readonly property string monoFont: "monospace"
     readonly property int fontSizeCaption: omarchyFontSizes.caption
     readonly property int fontSizeBody: omarchyFontSizes.body
     readonly property int fontSizeHeading: omarchyFontSizes.heading
