@@ -22,6 +22,11 @@ QtObject {
         "yellow": "#877364",
         "cyan": "#b5bfc4"
     })
+    property var omarchyFontSizes: ({
+        "caption": 10,
+        "body": 12,
+        "heading": 16
+    })
 
     readonly property bool omarchyMode: mode === "omarchy"
     readonly property bool darkMode: mode === "dark" || (omarchyMode && omarchyDark)
@@ -49,6 +54,9 @@ QtObject {
     readonly property color previewText: omarchyMode ? omarchyPalette.foreground : (darkMode ? text : "#ffffff")
     readonly property string uiFont: "Barlow"
     readonly property string monoFont: "JetBrains Mono"
+    readonly property int fontSizeCaption: omarchyFontSizes.caption
+    readonly property int fontSizeBody: omarchyFontSizes.body
+    readonly property int fontSizeHeading: omarchyFontSizes.heading
     readonly property int radius: 0
     readonly property int smallRadius: 0
 }

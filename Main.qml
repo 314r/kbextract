@@ -17,9 +17,10 @@ ApplicationWindow {
     title: qsTr("kbextract")
     color: Theme.canvas
 
-    function applyOmarchyPalette() {
+    function applyOmarchyTheme() {
         Theme.omarchyDark = omarchyTheme.dark
         Theme.omarchyPalette = omarchyTheme.palette
+        Theme.omarchyFontSizes = omarchyTheme.fontSizes
     }
 
     component ToolButton: Button {
@@ -28,8 +29,10 @@ ApplicationWindow {
         property color ink: control.enabled ? Theme.text : Theme.textFaint
         property color fill: control.down || control.hovered ? Theme.surfaceHover : Theme.surface
 
+        implicitHeight: Math.max(30, contentItem.implicitHeight + topPadding + bottomPadding)
         font.family: Theme.monoFont
-        font.pixelSize: 9
+        font.pixelSize: Theme.fontSizeBody
+        font.weight: Font.Medium
 
         contentItem: Text {
             text: control.text
@@ -50,7 +53,7 @@ ApplicationWindow {
     component SectionLabel: Text {
         color: Theme.text
         font.family: Theme.monoFont
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSizeCaption
         font.weight: Font.DemiBold
         font.letterSpacing: 1.1
     }
@@ -65,7 +68,8 @@ ApplicationWindow {
 
     OmarchyTheme {
         id: omarchyTheme
-        onPaletteChanged: window.applyOmarchyPalette()
+        onPaletteChanged: window.applyOmarchyTheme()
+        onFontSizesChanged: window.applyOmarchyTheme()
     }
 
     Settings {
@@ -88,12 +92,12 @@ ApplicationWindow {
 
     Component.onCompleted: {
         Theme.mode = appearanceSettings.colorMode
-        applyOmarchyPalette()
+        applyOmarchyTheme()
         koboLibrary.refreshDevices()
     }
 
     header: Rectangle {
-        implicitHeight: 48
+        implicitHeight: Math.max(48, modeButton.implicitHeight + 20)
         color: Theme.canvasGlass
 
         SeparatorLine {
@@ -126,10 +130,11 @@ ApplicationWindow {
                 id: modeButton
 
                 Layout.preferredWidth: 88
-                Layout.preferredHeight: 28
+                Layout.preferredHeight: Math.max(28, implicitHeight)
                 text: Theme.mode === "omarchy" ? qsTr("OMARCHY") : (Theme.mode === "light" ? qsTr("LIGHT") : qsTr("DARK"))
                 font.family: Theme.monoFont
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSizeBody
+                font.weight: Font.Medium
 
                 contentItem: Text {
                     text: modeButton.text
@@ -187,24 +192,24 @@ ApplicationWindow {
                     id: deviceSelector
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 34
+                    Layout.preferredHeight: Math.max(34, implicitHeight)
                     model: koboLibrary.devices
                     textRole: "displayName"
                     currentIndex: koboLibrary.currentDeviceIndex
                     enabled: count > 0
                     font.family: Theme.uiFont
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fontSizeBody
 
                     delegate: ItemDelegate {
                         required property int index
                         required property var modelData
 
                         width: deviceSelector.width
-                        height: 34
+                        height: Math.max(34, implicitHeight)
                         text: modelData.displayName
                         highlighted: deviceSelector.highlightedIndex === index
                         font.family: Theme.uiFont
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontSizeBody
 
                         contentItem: Text {
                             text: parent.text
@@ -235,7 +240,7 @@ ApplicationWindow {
                         text: qsTr("v")
                         color: deviceSelector.enabled ? Theme.textMuted : Theme.textFaint
                         font.family: Theme.monoFont
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeCaption
                     }
 
                     background: Rectangle {
@@ -276,7 +281,7 @@ ApplicationWindow {
 
                     ToolButton {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 30
+                        Layout.preferredHeight: implicitHeight
                         text: qsTr("REFRESH")
                         fill: "transparent"
                         onClicked: koboLibrary.refreshDevices()
@@ -284,7 +289,7 @@ ApplicationWindow {
 
                     ToolButton {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 30
+                        Layout.preferredHeight: implicitHeight
                         text: qsTr("BROWSE...")
                         fill: "transparent"
                         onClicked: databaseDialog.open()
@@ -309,7 +314,7 @@ ApplicationWindow {
                         text: koboLibrary.books.length
                         color: Theme.textFaint
                         font.family: Theme.monoFont
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fontSizeCaption
                     }
                 }
 
@@ -335,7 +340,10 @@ ApplicationWindow {
                             required property var modelData
 
                             width: bookList.width
-                            height: 72
+                            height: Math.max(
+                                72,
+                                contentItem.implicitHeight + topPadding + bottomPadding
+                            )
                             hoverEnabled: true
 
                             contentItem: Column {
@@ -346,7 +354,7 @@ ApplicationWindow {
                                     text: bookRow.modelData.title
                                     color: Theme.text
                                     font.family: Theme.uiFont
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.fontSizeBody
                                     font.weight: Font.Medium
                                     elide: Text.ElideRight
                                 }
@@ -357,7 +365,7 @@ ApplicationWindow {
                                     text: bookRow.modelData.author
                                     color: Theme.textMuted
                                     font.family: Theme.uiFont
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fontSizeCaption
                                     elide: Text.ElideRight
                                 }
 
@@ -370,7 +378,7 @@ ApplicationWindow {
                                         .arg(bookRow.modelData.noteCount === 1 ? "" : "s")
                                     color: Theme.textFaint
                                     font.family: Theme.monoFont
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fontSizeCaption
                                     elide: Text.ElideRight
                                 }
                             }
@@ -422,7 +430,7 @@ ApplicationWindow {
                         text: koboLibrary.statusText
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fontSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }
@@ -440,8 +448,10 @@ ApplicationWindow {
                 spacing: 0
 
                 Rectangle {
+                    id: bookHeader
+
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 76
+                    Layout.preferredHeight: Math.max(76, bookHeaderContent.implicitHeight + 32)
                     visible: koboLibrary.currentBookIndex >= 0
                     color: Theme.panel
 
@@ -453,6 +463,8 @@ ApplicationWindow {
                     }
 
                     Column {
+                        id: bookHeaderContent
+
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
@@ -465,7 +477,7 @@ ApplicationWindow {
                             text: koboLibrary.currentBookTitle
                             color: Theme.text
                             font.family: Theme.uiFont
-                            font.pixelSize: 20
+                            font.pixelSize: Theme.fontSizeHeading
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                         }
@@ -476,7 +488,7 @@ ApplicationWindow {
                             text: koboLibrary.currentBookAuthor
                             color: Theme.textMuted
                             font.family: Theme.uiFont
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fontSizeBody
                             elide: Text.ElideRight
                         }
                     }
@@ -576,7 +588,7 @@ ApplicationWindow {
                         text: qsTr("Select a book to view its highlights and notes.")
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }
@@ -589,7 +601,7 @@ ApplicationWindow {
                         text: koboLibrary.annotationStatusText
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }

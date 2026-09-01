@@ -29,8 +29,12 @@ make install
 The app starts in Omarchy mode and follows the active palette from
 `~/.local/state/omarchy/current/theme/colors.toml`. Palette changes are picked
 up while the app is running across backgrounds, controls, text, borders,
-selection, and accents. When Omarchy state is unavailable, the app uses a
-built-in dark fallback palette.
+selection, and accents. The interface also follows Omarchy's caption, body,
+and heading sizes from the active theme's `shell.toml`, with
+`~/.config/omarchy/shell.toml` applied as the user override. Changes made with
+`omarchy display text size` are picked up while the app is running. The
+Markdown document keeps its own reading sizes. When Omarchy state is
+unavailable, the app uses built-in palette and typography defaults.
 
 Use the button in the header to cycle between Omarchy, light, and dark modes.
 The selected mode is saved across launches.

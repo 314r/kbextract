@@ -26,6 +26,11 @@ QColor paletteColor(const QVariantMap &palette, const QString &key)
     return palette.value(key).value<QColor>();
 }
 
+int fontSize(const QVariantMap &fontSizes, const QString &key)
+{
+    return fontSizes.value(key).toInt();
+}
+
 } // namespace
 
 class OmarchyThemeTest : public QObject
@@ -37,6 +42,11 @@ private slots:
     void mapsLegacyPaletteAliases();
     void suppliesCanonicalFallbackPalette();
     void reloadsPaletteChanges();
+    void suppliesDefaultFontSizes();
+    void scalesAndOverridesFontSizes();
+    void userFontSizesOverrideTheme();
+    void ignoresInvalidFontSizes();
+    void reloadsFontSizeChanges();
 };
 
 void OmarchyThemeTest::loadsCanonicalPalette()
@@ -150,6 +160,100 @@ void OmarchyThemeTest::reloadsPaletteChanges()
     QCOMPARE(paletteChangedSpy.count(), 1);
     QVERIFY(!theme.dark());
     QCOMPARE(paletteColor(theme.palette(), QStringLiteral("background")), QColor(QStringLiteral("#eeeeee")));
+}
+
+void OmarchyThemeTest::suppliesDefaultFontSizes()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    OmarchyTheme theme(directory.path());
+
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 10);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 12);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 16);
+}
+
+void OmarchyThemeTest::scalesAndOverridesFontSizes()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(writeTextFile(directory.filePath(QStringLiteral("theme/shell.toml")), QByteArrayLiteral(
+        "[font]\n"
+        "base-size = 13\n"
+        "caption = 9\n"
+        "heading = 21 # Theme emphasis\n")));
+
+    OmarchyTheme theme(directory.path());
+
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 9);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 13);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 21);
+}
+
+void OmarchyThemeTest::userFontSizesOverrideTheme()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString userShellPath = directory.filePath(QStringLiteral("config/shell.toml"));
+    QVERIFY(writeTextFile(directory.filePath(QStringLiteral("state/theme/shell.toml")), QByteArrayLiteral(
+        "[font]\n"
+        "base-size = 13\n"
+        "caption = 10\n"
+        "heading = 18\n")));
+    QVERIFY(writeTextFile(userShellPath, QByteArrayLiteral(
+        "[font]\n"
+        "base-size = 16\n"
+        "heading = 22\n")));
+
+    OmarchyTheme theme(directory.filePath(QStringLiteral("state")), userShellPath);
+
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 10);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 16);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 22);
+}
+
+void OmarchyThemeTest::ignoresInvalidFontSizes()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QVERIFY(writeTextFile(directory.filePath(QStringLiteral("theme/shell.toml")), QByteArrayLiteral(
+        "[font]\n"
+        "base-size = invalid\n"
+        "caption = -3\n"
+        "body = 0\n"
+        "heading = '17'\n")));
+
+    OmarchyTheme theme(directory.path());
+
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 10);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 12);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 17);
+}
+
+void OmarchyThemeTest::reloadsFontSizeChanges()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString shellPath = directory.filePath(QStringLiteral("theme/shell.toml"));
+    QVERIFY(writeTextFile(shellPath, QByteArrayLiteral(
+        "[font]\n"
+        "base-size = 12\n")));
+
+    OmarchyTheme theme(directory.path());
+    QSignalSpy fontSizesChangedSpy(&theme, &OmarchyTheme::fontSizesChanged);
+    QSignalSpy paletteChangedSpy(&theme, &OmarchyTheme::paletteChanged);
+
+    QVERIFY(writeTextFile(shellPath, QByteArrayLiteral(
+        "[font]\n"
+        "base-size = 15\n")));
+    theme.reload();
+
+    QCOMPARE(fontSizesChangedSpy.count(), 1);
+    QCOMPARE(paletteChangedSpy.count(), 0);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 12);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 15);
+    QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 20);
 }
 
 QTEST_GUILESS_MAIN(OmarchyThemeTest)
