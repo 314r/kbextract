@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=kbextract
+Comment=Extract highlights and notes from Kobo eReaders
+Exec=kbextract
+Terminal=false
+Categories=Utility;
+Keywords=Kobo;eReader;highlights;notes;
+StartupNotify=true
