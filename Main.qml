@@ -113,17 +113,6 @@ ApplicationWindow {
             anchors.rightMargin: 18
             spacing: 6
 
-            Repeater {
-                model: 3
-                delegate: Rectangle {
-                    Layout.preferredWidth: 8
-                    Layout.preferredHeight: 8
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.lineStrong
-                }
-            }
-
             Item { Layout.fillWidth: true }
 
             Button {
@@ -165,8 +154,8 @@ ApplicationWindow {
         Rectangle {
             id: sourcePanel
 
-            Layout.preferredWidth: window.width >= 1220 ? 258 : 214
-            Layout.minimumWidth: 214
+            Layout.preferredWidth: window.width >= 1220 ? 290 : 246
+            Layout.minimumWidth: 246
             Layout.fillHeight: true
             color: Theme.panel
 
