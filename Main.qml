@@ -368,7 +368,7 @@ ApplicationWindow {
                                         color: Theme.text
                                         font.family: Theme.uiFont
                                         font.pixelSize: Theme.fontSizeBody
-                                        font.weight: Font.Medium
+                                        font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
 
@@ -378,7 +378,7 @@ ApplicationWindow {
                                         text: bookRow.modelData.author
                                         color: Theme.textMuted
                                         font.family: Theme.uiFont
-                                        font.pixelSize: Theme.fontSizeCaption
+                                        font.pixelSize: Theme.fontSizeBody
                                         elide: Text.ElideRight
                                     }
 
