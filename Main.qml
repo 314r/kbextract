@@ -404,7 +404,7 @@ ApplicationWindow {
                                 height: bookRow.height + (bookRow.selected ? 1 : 0)
                                 color: bookRow.selected
                                     ? Theme.surfaceSelected
-                                    : (bookRow.hovered ? Theme.surfaceHover : Theme.surface)
+                                    : (bookRow.hovered ? Theme.surfaceHover : "transparent")
                                 border.width: bookRow.selected ? 2 : 0
                                 border.color: Theme.accent
 
