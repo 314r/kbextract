@@ -551,6 +551,7 @@ ApplicationWindow {
                             text: koboLibrary.currentBookMarkdown
                             textFormat: TextEdit.PlainText
                             readOnly: true
+                            ContextMenu.menu: null
                             selectByMouse: true
                             persistentSelection: true
                             wrapMode: TextEdit.WrapAtWordBoundaryOrAnywhere
