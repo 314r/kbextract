@@ -38,19 +38,35 @@ bool createDatabase(const QString &path, bool withKoboSchema = true)
             succeeded = execute(database, QStringLiteral(
                 "CREATE TABLE content ("
                 "ContentID TEXT, BookID TEXT, Title TEXT, Attribution TEXT, "
-                "ContentType INTEGER, VolumeIndex INTEGER)"))
+                "ContentType INTEGER, VolumeIndex INTEGER, ChapterIDBookmarked TEXT)"))
                 && execute(database, QStringLiteral(
                     "CREATE TABLE Bookmark ("
                     "BookmarkID TEXT, VolumeID TEXT, ContentID TEXT, Text TEXT, Annotation TEXT, "
                     "Hidden TEXT, StartContainerChildIndex INTEGER, StartOffset INTEGER, ChapterProgress REAL)"))
                 && execute(database, QStringLiteral(
                     "INSERT INTO content VALUES "
-                    "('book-alpha', NULL, 'Alpha', 'Author A', 6, 0), "
-                    "('book-beta', NULL, 'beta', 'Author B', 6, 0), "
-                    "('book-empty', NULL, 'Empty', 'Author C', 6, 0), "
-                    "('chapter-1', 'book-alpha', 'Chapter' || char(10) || 'One', NULL, 9, 1), "
-                    "('chapter-2', 'book-alpha', 'Chapter Two', NULL, 9, 2), "
-                    "('book-beta!opf!chapter-2-1', 'book-beta', 'Beta Chapter', NULL, 899, 2)"))
+                    "('book-alpha', NULL, 'Alpha', 'Author A', 6, 0, NULL), "
+                    "('book-beta', NULL, 'beta', 'Author B', 6, 0, NULL), "
+                    "('book-empty', NULL, 'Empty', 'Author C', 6, 0, NULL), "
+                    "('book-split', NULL, 'Le labyrinthe des égarés', 'Amin Maalouf', 6, -1, NULL), "
+                    "('chapter-1', 'book-alpha', 'Chapter' || char(10) || 'One', NULL, 9, 1, NULL), "
+                    "('chapter-2', 'book-alpha', 'Chapter Two', NULL, 9, 2, NULL), "
+                    "('book-beta!opf!chapter-2-1', 'book-beta', 'Beta Chapter', NULL, 899, 2, "
+                        "'book-beta!opf!chapter-2'), "
+                    "('book-split!OPS!p1.xhtml', 'book-split', 'p1.xhtml', NULL, 9, 4, NULL), "
+                    "('book-split!OPS!p1chap8.xhtml', 'book-split', 'p1chap8.xhtml', NULL, 9, 12, NULL), "
+                    "('book-split!OPS!p1chap10.xhtml', 'book-split', 'p1chap10.xhtml', NULL, 9, 14, NULL), "
+                    "('book-split!OPS!p3.xhtml', 'book-split', 'p3.xhtml', NULL, 9, 26, NULL), "
+                    "('book-split!OPS!p3chap11.xhtml', 'book-split', 'p3chap11.xhtml', NULL, 9, 37, NULL), "
+                    "('book-split!OPS!p5.xhtml', 'book-split', 'p5.xhtml', NULL, 9, 47, NULL), "
+                    "('book-split!OPS!p5chap3.xhtml', 'book-split', 'p5chap3.xhtml', NULL, 9, 50, NULL), "
+                    "('book-split!OPS!p5chap4.xhtml', 'book-split', 'p5chap4.xhtml', NULL, 9, 51, NULL), "
+                    "('book-split!OPS!p1.xhtml-1', 'book-split', 'I.' || char(8194) || 'Les étincelles japonaises', NULL, 899, 4, "
+                        "'book-split!OPS!p1.xhtml'), "
+                    "('book-split!OPS!p3.xhtml-1', 'book-split', 'III.' || char(8194) || 'Une si longue marche', NULL, 899, 6, "
+                        "'book-split!OPS!p3.xhtml'), "
+                    "('book-split!OPS!p5.xhtml-1', 'book-split', 'Épilogue.' || char(8194) || 'Un monde à reconstruire', NULL, 899, 8, "
+                        "'book-split!OPS!p5.xhtml')"))
                 && execute(database, QStringLiteral(
                     "INSERT INTO Bookmark VALUES "
                     "('later-highlight', 'book-alpha', 'chapter-2', 'Later text', NULL, 'false', 1, 4, 0.2), "
@@ -62,6 +78,16 @@ bool createDatabase(const QString &path, bool withKoboSchema = true)
                     "('hidden', 'book-alpha', 'chapter-1', 'Hidden text', NULL, 'true', 1, 12, 0.3), "
                     "('dog-ear', 'book-alpha', 'chapter-1', 'Chapter bookmark', NULL, 'false', 0, 0, 0.4), "
                     "('annotation-only', 'book-beta', 'book-beta!opf!chapter-2', NULL, 'Margin note', '0', 2, 3, 0.1), "
+                    "('split-p1-later', 'book-split', 'book-split!OPS!p1chap10.xhtml', "
+                        "'Second part-one highlight', NULL, 'false', 1, 2, 0.1), "
+                    "('split-p1-earlier', 'book-split', 'book-split!OPS!p1chap8.xhtml', "
+                        "'First part-one highlight', NULL, 'false', 1, 2, 0.1), "
+                    "('split-p3', 'book-split', 'book-split!OPS!p3chap11.xhtml', "
+                        "'Part-three highlight', NULL, 'false', 1, 2, 0.1), "
+                    "('split-p5-first', 'book-split', 'book-split!OPS!p5chap3.xhtml', "
+                        "'First epilogue highlight', NULL, 'false', 1, 2, 0.1), "
+                    "('split-p5-second', 'book-split', 'book-split!OPS!p5chap4.xhtml', "
+                        "'Second epilogue highlight', NULL, 'false', 1, 2, 0.1), "
                     "('fallback-title', 'missing-volume', 'chapter-3', 'Orphaned highlight', NULL, 'false', 3, 2, 0.1), "
                     "('blank', 'book-empty', 'chapter-4', '   ', '   ', 'false', 4, 2, 0.1)"));
         }
@@ -113,6 +139,7 @@ class KoboLibraryTest : public QObject
 private slots:
     void loadsAnnotatedBooks();
     void formatsSelectedBookAsMarkdown();
+    void groupsSplitContentFilesUnderNavigationChapters();
     void clearsSelectedBookOnReload();
     void rejectsMissingDatabase();
     void reportsMalformedSchema();
@@ -130,10 +157,11 @@ void KoboLibraryTest::loadsAnnotatedBooks()
     QVERIFY(library.addDatabase(databasePath));
 
     const QVariantList books = library.books();
-    QCOMPARE(books.size(), 3);
+    QCOMPARE(books.size(), 4);
     QCOMPARE(books.at(0).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Alpha"));
     QCOMPARE(books.at(1).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("beta"));
-    QCOMPARE(books.at(2).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("missing-volume"));
+    QCOMPARE(books.at(2).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Le labyrinthe des égarés"));
+    QCOMPARE(books.at(3).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("missing-volume"));
 
     const QVariantMap alpha = bookWithVolumeId(books, QStringLiteral("book-alpha"));
     QCOMPARE(alpha.value(QStringLiteral("author")).toString(), QStringLiteral("Author A"));
@@ -149,7 +177,11 @@ void KoboLibraryTest::loadsAnnotatedBooks()
     QCOMPARE(fallback.value(QStringLiteral("author")).toString(), QString());
     QCOMPARE(fallback.value(QStringLiteral("highlightCount")).toInt(), 1);
     QCOMPARE(fallback.value(QStringLiteral("noteCount")).toInt(), 0);
-    QVERIFY(library.statusText().contains(QStringLiteral("Loaded 3 annotated books")));
+    const QVariantMap split = bookWithVolumeId(books, QStringLiteral("book-split"));
+    QCOMPARE(split.value(QStringLiteral("author")).toString(), QStringLiteral("Amin Maalouf"));
+    QCOMPARE(split.value(QStringLiteral("highlightCount")).toInt(), 5);
+    QCOMPARE(split.value(QStringLiteral("noteCount")).toInt(), 0);
+    QVERIFY(library.statusText().contains(QStringLiteral("Loaded 4 annotated books")));
 }
 
 void KoboLibraryTest::formatsSelectedBookAsMarkdown()
@@ -226,6 +258,56 @@ void KoboLibraryTest::formatsSelectedBookAsMarkdown()
     QVERIFY(library.currentBookMarkdown().isEmpty());
     QVERIFY(library.currentBookObsidianMarkdown().isEmpty());
     QVERIFY(library.currentBookPlainText().isEmpty());
+}
+
+void KoboLibraryTest::groupsSplitContentFilesUnderNavigationChapters()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
+    QVERIFY(createDatabase(databasePath));
+
+    KoboLibrary library;
+    QVERIFY(library.addDatabase(databasePath));
+
+    const int bookIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-split"));
+    QVERIFY(bookIndex >= 0);
+    library.setCurrentBookIndex(bookIndex);
+
+    QCOMPARE(library.currentBookMarkdown(), QStringLiteral(
+        "## I. Les étincelles japonaises\n\n"
+        "> First part-one highlight\n\n\n"
+        "> Second part-one highlight\n\n\n"
+        "## III. Une si longue marche\n\n"
+        "> Part-three highlight\n\n\n"
+        "## Épilogue. Un monde à reconstruire\n\n"
+        "> First epilogue highlight\n\n\n"
+        "> Second epilogue highlight"));
+    QVERIFY(!library.currentBookMarkdown().contains(QStringLiteral(".xhtml")));
+
+    QCOMPARE(library.currentBookObsidianMarkdown(), QStringLiteral(
+        "## I. Les étincelles japonaises\n\n"
+        "> [!quote]\n"
+        "> First part-one highlight\n\n\n"
+        "> [!quote]\n"
+        "> Second part-one highlight\n\n\n"
+        "## III. Une si longue marche\n\n"
+        "> [!quote]\n"
+        "> Part-three highlight\n\n\n"
+        "## Épilogue. Un monde à reconstruire\n\n"
+        "> [!quote]\n"
+        "> First epilogue highlight\n\n\n"
+        "> [!quote]\n"
+        "> Second epilogue highlight"));
+    QCOMPARE(library.currentBookPlainText(), QStringLiteral(
+        "I. Les étincelles japonaises\n\n"
+        "First part-one highlight\n\n\n"
+        "Second part-one highlight\n\n\n"
+        "III. Une si longue marche\n\n"
+        "Part-three highlight\n\n\n"
+        "Épilogue. Un monde à reconstruire\n\n"
+        "First epilogue highlight\n\n\n"
+        "Second epilogue highlight"));
 }
 
 void KoboLibraryTest::clearsSelectedBookOnReload()

@@ -22,6 +22,8 @@ struct ChapterMetadata {
     QString title;
     qlonglong order = 0;
     bool hasOrder = false;
+    qlonglong spineStart = 0;
+    bool hasSpineStart = false;
 };
 
 struct ChapterAnnotations {
@@ -51,7 +53,7 @@ QString singleLineText(const QString &source)
     QStringList fragments;
     const QStringList lines = normalizedText(source).split(QLatin1Char('\n'));
     for (const QString &line : lines) {
-        const QString fragment = line.trimmed();
+        const QString fragment = line.simplified();
         if (!fragment.isEmpty())
             fragments.append(fragment);
     }
@@ -219,11 +221,21 @@ void KoboLibrary::setCurrentBookIndex(int index)
     }
 
     static const QString kepubChapterQueryText = QStringLiteral(R"SQL(
-        SELECT ContentID, Title, VolumeIndex
-        FROM content
-        WHERE CAST(ContentType AS INTEGER) = 899
-          AND BookID = :volume_id
-        ORDER BY COALESCE(VolumeIndex, 0), ContentID COLLATE NOCASE
+        SELECT
+            navigation.ContentID,
+            navigation.ChapterIDBookmarked,
+            navigation.Title,
+            navigation.VolumeIndex,
+            target.VolumeIndex
+        FROM content navigation
+        LEFT JOIN content target
+               ON target.ContentID = navigation.ChapterIDBookmarked
+        WHERE CAST(navigation.ContentType AS INTEGER) = 899
+          AND navigation.BookID = :volume_id
+        ORDER BY CASE WHEN target.VolumeIndex IS NULL THEN 1 ELSE 0 END,
+                 target.VolumeIndex,
+                 COALESCE(navigation.VolumeIndex, 0),
+                 navigation.ContentID COLLATE NOCASE
     )SQL");
 
     QSqlQuery kepubChapterQuery(m_database);
@@ -241,21 +253,38 @@ void KoboLibrary::setCurrentBookIndex(int index)
     }
 
     QHash<QString, ChapterMetadata> kepubChapters;
+    QList<ChapterMetadata> kepubChapterRanges;
     while (kepubChapterQuery.next()) {
         const QString contentId = normalizedText(kepubChapterQuery.value(0).toString());
         if (contentId.isEmpty())
             continue;
 
+        const QString targetContentId = normalizedText(kepubChapterQuery.value(1).toString());
         ChapterMetadata metadata;
-        metadata.key = kepubBookmarkChapterId(contentId);
-        metadata.title = singleLineText(kepubChapterQuery.value(1).toString());
-        metadata.hasOrder = !kepubChapterQuery.value(2).isNull();
-        if (metadata.hasOrder)
-            metadata.order = kepubChapterQuery.value(2).toLongLong();
+        metadata.key = targetContentId.isEmpty() ? kepubBookmarkChapterId(contentId) : targetContentId;
+        metadata.title = singleLineText(kepubChapterQuery.value(2).toString());
+        metadata.hasSpineStart = !kepubChapterQuery.value(4).isNull();
+        if (metadata.hasSpineStart)
+            metadata.spineStart = kepubChapterQuery.value(4).toLongLong();
+
+        metadata.hasOrder = metadata.hasSpineStart || !kepubChapterQuery.value(3).isNull();
+        if (metadata.hasSpineStart)
+            metadata.order = metadata.spineStart;
+        else if (metadata.hasOrder)
+            metadata.order = kepubChapterQuery.value(3).toLongLong();
 
         kepubChapters.insert(contentId, metadata);
-        kepubChapters.insert(metadata.key, metadata);
+        kepubChapters.insert(kepubBookmarkChapterId(contentId), metadata);
+        if (!metadata.key.isEmpty())
+            kepubChapters.insert(metadata.key, metadata);
+        if (metadata.hasSpineStart)
+            kepubChapterRanges.append(metadata);
     }
+
+    std::stable_sort(kepubChapterRanges.begin(), kepubChapterRanges.end(),
+                     [](const ChapterMetadata &left, const ChapterMetadata &right) {
+        return left.spineStart < right.spineStart;
+    });
 
     static const QString queryText = QStringLiteral(R"SQL(
         SELECT
@@ -277,8 +306,10 @@ void KoboLibrary::setCurrentBookIndex(int index)
               NULLIF(TRIM(COALESCE(bm.Text, '')), '') IS NOT NULL
               OR NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NOT NULL
           )
-        ORDER BY bm.ContentID COLLATE NOCASE,
+        ORDER BY CASE WHEN chapter.VolumeIndex IS NULL THEN 1 ELSE 0 END,
+                 chapter.VolumeIndex,
                  COALESCE(bm.ChapterProgress, 0),
+                 bm.ContentID COLLATE NOCASE,
                  bm.BookmarkID COLLATE NOCASE
     )SQL");
 
@@ -322,17 +353,30 @@ void KoboLibrary::setCurrentBookIndex(int index)
 
         QString chapterKey = contentId;
         QString chapterTitle = singleLineText(query.value(4).toString());
-        bool hasChapterOrder = !query.value(5).isNull();
-        qlonglong chapterOrder = hasChapterOrder ? query.value(5).toLongLong() : 0;
+        const bool hasContentOrder = !query.value(5).isNull();
+        const qlonglong contentOrder = hasContentOrder ? query.value(5).toLongLong() : 0;
+        bool hasChapterOrder = hasContentOrder;
+        qlonglong chapterOrder = contentOrder;
 
-        const auto kepubChapter = kepubChapters.constFind(contentId);
-        if (kepubChapter != kepubChapters.cend()) {
-            chapterKey = kepubChapter->key;
-            if (!kepubChapter->title.isEmpty())
-                chapterTitle = kepubChapter->title;
-            if (kepubChapter->hasOrder) {
+        const ChapterMetadata *resolvedChapter = nullptr;
+        const auto exactChapter = kepubChapters.constFind(contentId);
+        if (exactChapter != kepubChapters.cend()) {
+            resolvedChapter = &exactChapter.value();
+        } else if (hasContentOrder) {
+            for (const ChapterMetadata &candidate : std::as_const(kepubChapterRanges)) {
+                if (candidate.spineStart > contentOrder)
+                    break;
+                resolvedChapter = &candidate;
+            }
+        }
+
+        if (resolvedChapter) {
+            chapterKey = resolvedChapter->key;
+            if (!resolvedChapter->title.isEmpty())
+                chapterTitle = resolvedChapter->title;
+            if (resolvedChapter->hasOrder) {
                 hasChapterOrder = true;
-                chapterOrder = kepubChapter->order;
+                chapterOrder = resolvedChapter->order;
             }
         }
 
