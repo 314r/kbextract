@@ -329,7 +329,7 @@ ApplicationWindow {
 
                         anchors.fill: parent
                         clip: true
-                        spacing: 6
+                        spacing: 0
                         model: koboLibrary.books
                         currentIndex: koboLibrary.currentBookIndex
 
@@ -338,57 +338,84 @@ ApplicationWindow {
 
                             required property int index
                             required property var modelData
+                            readonly property bool selected: bookList.currentIndex === index
+                            readonly property int separatorThickness: activeFocus ? 2 : 1
 
                             width: bookList.width
+                            z: selected ? 1 : 0
                             height: Math.max(
                                 72,
-                                contentItem.implicitHeight + topPadding + bottomPadding
+                                contentItem.implicitHeight + topPadding * 2 + 2
                             )
+                            topPadding: 8
+                            bottomPadding: selected ? topPadding : topPadding + separatorThickness
                             hoverEnabled: true
 
-                            contentItem: Column {
-                                spacing: 4
+                            contentItem: Item {
+                                implicitHeight: bookRowText.implicitHeight
 
-                                Text {
-                                    width: parent.width
-                                    text: bookRow.modelData.title
-                                    color: Theme.text
-                                    font.family: Theme.uiFont
-                                    font.pixelSize: Theme.fontSizeBody
-                                    font.weight: Font.Medium
-                                    elide: Text.ElideRight
-                                }
+                                Column {
+                                    id: bookRowText
 
-                                Text {
-                                    width: parent.width
-                                    visible: text.length > 0
-                                    text: bookRow.modelData.author
-                                    color: Theme.textMuted
-                                    font.family: Theme.uiFont
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    elide: Text.ElideRight
-                                }
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4
 
-                                Text {
-                                    width: parent.width
-                                    text: qsTr("%1 highlight%2  ·  %3 note%4")
-                                        .arg(bookRow.modelData.highlightCount)
-                                        .arg(bookRow.modelData.highlightCount === 1 ? "" : "s")
-                                        .arg(bookRow.modelData.noteCount)
-                                        .arg(bookRow.modelData.noteCount === 1 ? "" : "s")
-                                    color: Theme.textFaint
-                                    font.family: Theme.monoFont
-                                    font.pixelSize: Theme.fontSizeCaption
-                                    elide: Text.ElideRight
+                                    Text {
+                                        width: parent.width
+                                        text: bookRow.modelData.title
+                                        color: Theme.text
+                                        font.family: Theme.uiFont
+                                        font.pixelSize: Theme.fontSizeBody
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        visible: text.length > 0
+                                        text: bookRow.modelData.author
+                                        color: Theme.textMuted
+                                        font.family: Theme.uiFont
+                                        font.pixelSize: Theme.fontSizeCaption
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: qsTr("%1 highlight%2  ·  %3 note%4")
+                                            .arg(bookRow.modelData.highlightCount)
+                                            .arg(bookRow.modelData.highlightCount === 1 ? "" : "s")
+                                            .arg(bookRow.modelData.noteCount)
+                                            .arg(bookRow.modelData.noteCount === 1 ? "" : "s")
+                                        color: Theme.textFaint
+                                        font.family: Theme.monoFont
+                                        font.pixelSize: Theme.fontSizeCaption
+                                        elide: Text.ElideRight
+                                    }
                                 }
                             }
 
                             background: Rectangle {
-                                color: bookList.currentIndex === bookRow.index
+                                x: 0
+                                y: bookRow.selected ? -1 : 0
+                                width: bookRow.width
+                                height: bookRow.height + (bookRow.selected ? 1 : 0)
+                                color: bookRow.selected
                                     ? Theme.surfaceSelected
                                     : (bookRow.hovered ? Theme.surfaceHover : Theme.surface)
-                                border.width: bookList.currentIndex === bookRow.index || bookRow.activeFocus ? 2 : 1
-                                border.color: bookList.currentIndex === bookRow.index || bookRow.activeFocus ? Theme.accent : Theme.line
+                                border.width: bookRow.selected ? 2 : 0
+                                border.color: Theme.accent
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    visible: !bookRow.selected
+                                    height: bookRow.separatorThickness
+                                    color: bookRow.activeFocus ? Theme.accent : Theme.line
+                                }
                             }
 
                             onClicked: koboLibrary.currentBookIndex = index
