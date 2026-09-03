@@ -8,12 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(GNUInstallDirs)
 include(CTest)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Sql)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Sql Svg)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(kbextract
     main.cpp
+    clipboard_helper.cpp
+    clipboard_helper.h
     kobo_library.cpp
     kobo_library.h
     markdown_highlighter.cpp
@@ -30,6 +32,10 @@ qt_add_qml_module(kbextract
     QML_FILES
         Main.qml
         Theme.qml
+    RESOURCES
+        assets/icons/theme-dark.svg
+        assets/icons/theme-light.svg
+        assets/icons/theme-omarchy.svg
 )
 
 target_link_libraries(kbextract
@@ -40,6 +46,7 @@ target_link_libraries(kbextract
         Qt6::Quick
         Qt6::QuickControls2
         Qt6::Sql
+        Qt6::Svg
 )
 
 install(TARGETS kbextract
@@ -85,4 +92,18 @@ if(BUILD_TESTING)
     target_link_libraries(omarchy_theme_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
 
     add_test(NAME omarchy_theme_tests COMMAND omarchy_theme_tests)
+
+    qt_add_executable(clipboard_helper_tests
+        tests/clipboard_helper_test.cpp
+        clipboard_helper.cpp
+        clipboard_helper.h
+    )
+
+    target_include_directories(clipboard_helper_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(clipboard_helper_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+
+    add_test(NAME clipboard_helper_tests COMMAND clipboard_helper_tests)
+    set_tests_properties(clipboard_helper_tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME="
+    )
 endif()

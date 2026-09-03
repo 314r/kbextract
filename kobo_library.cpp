@@ -27,6 +27,8 @@ struct ChapterMetadata {
 struct ChapterAnnotations {
     QString title;
     QStringList annotations;
+    QStringList obsidianAnnotations;
+    QStringList plainTextAnnotations;
     qlonglong order = 0;
     bool hasOrder = false;
     int firstSeen = 0;
@@ -99,6 +101,11 @@ QString highlightBlock(const QString &text)
     return lines.join(QLatin1Char('\n'));
 }
 
+QString obsidianHighlightBlock(const QString &text)
+{
+    return QStringLiteral("> [!quote]\n") + highlightBlock(text);
+}
+
 QString noteParagraph(const QString &text)
 {
     return normalizedText(text);
@@ -152,6 +159,16 @@ QString KoboLibrary::currentBookMarkdown() const
     return m_currentBookMarkdown;
 }
 
+QString KoboLibrary::currentBookObsidianMarkdown() const
+{
+    return m_currentBookObsidianMarkdown;
+}
+
+QString KoboLibrary::currentBookPlainText() const
+{
+    return m_currentBookPlainText;
+}
+
 QString KoboLibrary::annotationStatusText() const
 {
     return m_annotationStatusText;
@@ -197,7 +214,7 @@ void KoboLibrary::setCurrentBookIndex(int index)
     const QString volumeId = book.value(QStringLiteral("volumeId")).toString();
 
     if (!m_database.isOpen()) {
-        setCurrentBookState(index, title, author, {}, tr("The Kobo database is not open."));
+        setCurrentBookState(index, title, author, {}, {}, {}, tr("The Kobo database is not open."));
         return;
     }
 
@@ -212,13 +229,13 @@ void KoboLibrary::setCurrentBookIndex(int index)
     QSqlQuery kepubChapterQuery(m_database);
     kepubChapterQuery.setForwardOnly(true);
     if (!kepubChapterQuery.prepare(kepubChapterQueryText)) {
-        setCurrentBookState(index, title, author, {},
+        setCurrentBookState(index, title, author, {}, {}, {},
                             tr("Could not prepare the chapter query: %1").arg(kepubChapterQuery.lastError().text()));
         return;
     }
     kepubChapterQuery.bindValue(QStringLiteral(":volume_id"), volumeId);
     if (!kepubChapterQuery.exec()) {
-        setCurrentBookState(index, title, author, {},
+        setCurrentBookState(index, title, author, {}, {}, {},
                             tr("Could not read this book's chapters: %1").arg(kepubChapterQuery.lastError().text()));
         return;
     }
@@ -268,13 +285,13 @@ void KoboLibrary::setCurrentBookIndex(int index)
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(queryText)) {
-        setCurrentBookState(index, title, author, {},
+        setCurrentBookState(index, title, author, {}, {}, {},
                             tr("Could not prepare the annotation query: %1").arg(query.lastError().text()));
         return;
     }
     query.bindValue(QStringLiteral(":volume_id"), volumeId);
     if (!query.exec()) {
-        setCurrentBookState(index, title, author, {},
+        setCurrentBookState(index, title, author, {}, {}, {},
                             tr("Could not read this book's annotations: %1").arg(query.lastError().text()));
         return;
     }
@@ -288,10 +305,18 @@ void KoboLibrary::setCurrentBookIndex(int index)
         const QString highlightedText = normalizedText(query.value(2).toString());
         const QString noteText = normalizedText(query.value(3).toString());
         QStringList annotationParts;
-        if (!highlightedText.isEmpty())
+        QStringList obsidianAnnotationParts;
+        QStringList plainTextAnnotationParts;
+        if (!highlightedText.isEmpty()) {
             annotationParts.append(highlightBlock(highlightedText));
-        if (!noteText.isEmpty())
+            obsidianAnnotationParts.append(obsidianHighlightBlock(highlightedText));
+            plainTextAnnotationParts.append(reflowedHighlightText(highlightedText));
+        }
+        if (!noteText.isEmpty()) {
             annotationParts.append(noteParagraph(noteText));
+            obsidianAnnotationParts.append(noteParagraph(noteText));
+            plainTextAnnotationParts.append(noteParagraph(noteText));
+        }
         if (annotationParts.isEmpty())
             continue;
 
@@ -327,6 +352,8 @@ void KoboLibrary::setCurrentBookIndex(int index)
             chapters.append(ChapterAnnotations{
                 .title = chapterTitle,
                 .annotations = {},
+                .obsidianAnnotations = {},
+                .plainTextAnnotations = {},
                 .order = chapterOrder,
                 .hasOrder = hasChapterOrder,
                 .firstSeen = chapterIndex,
@@ -341,6 +368,8 @@ void KoboLibrary::setCurrentBookIndex(int index)
         }
 
         chapters[chapterIndex].annotations.append(annotationParts.join(QStringLiteral("\n\n")));
+        chapters[chapterIndex].obsidianAnnotations.append(obsidianAnnotationParts.join(QStringLiteral("\n\n")));
+        chapters[chapterIndex].plainTextAnnotations.append(plainTextAnnotationParts.join(QStringLiteral("\n\n")));
     }
 
     std::stable_sort(chapters.begin(), chapters.end(), [](const ChapterAnnotations &left, const ChapterAnnotations &right) {
@@ -352,18 +381,24 @@ void KoboLibrary::setCurrentBookIndex(int index)
     });
 
     QStringList chapterSections;
+    QStringList obsidianChapterSections;
+    QStringList plainTextChapterSections;
     for (const ChapterAnnotations &chapter : std::as_const(chapters)) {
         const QString chapterTitle = chapter.title.isEmpty() ? tr("Untitled chapter") : chapter.title;
-        chapterSections.append(QStringLiteral("## ") + chapterTitle
-                               + QStringLiteral("\n\n")
-                               + chapter.annotations.join(QStringLiteral("\n\n\n")));
+        const QString heading = QStringLiteral("## ") + chapterTitle + QStringLiteral("\n\n");
+        chapterSections.append(heading + chapter.annotations.join(QStringLiteral("\n\n\n")));
+        obsidianChapterSections.append(heading + chapter.obsidianAnnotations.join(QStringLiteral("\n\n\n")));
+        plainTextChapterSections.append(chapterTitle + QStringLiteral("\n\n")
+                                        + chapter.plainTextAnnotations.join(QStringLiteral("\n\n\n")));
     }
 
     const QString markdown = chapterSections.join(QStringLiteral("\n\n\n"));
+    const QString obsidianMarkdown = obsidianChapterSections.join(QStringLiteral("\n\n\n"));
+    const QString plainText = plainTextChapterSections.join(QStringLiteral("\n\n\n"));
     const QString annotationStatus = markdown.isEmpty()
         ? tr("No visible highlights or notes for this book.")
         : QString();
-    setCurrentBookState(index, title, author, markdown, annotationStatus);
+    setCurrentBookState(index, title, author, markdown, obsidianMarkdown, plainText, annotationStatus);
 }
 
 void KoboLibrary::refreshDevices()
@@ -573,16 +608,19 @@ void KoboLibrary::setBooks(QVariantList books)
 
 void KoboLibrary::clearCurrentBook()
 {
-    setCurrentBookState(-1, {}, {}, {}, {});
+    setCurrentBookState(-1, {}, {}, {}, {}, {}, {});
 }
 
 void KoboLibrary::setCurrentBookState(int index, const QString &title, const QString &author,
-                                      const QString &markdown, const QString &statusText)
+                                      const QString &markdown, const QString &obsidianMarkdown,
+                                      const QString &plainText, const QString &statusText)
 {
     if (m_currentBookIndex == index
         && m_currentBookTitle == title
         && m_currentBookAuthor == author
         && m_currentBookMarkdown == markdown
+        && m_currentBookObsidianMarkdown == obsidianMarkdown
+        && m_currentBookPlainText == plainText
         && m_annotationStatusText == statusText) {
         return;
     }
@@ -591,6 +629,8 @@ void KoboLibrary::setCurrentBookState(int index, const QString &title, const QSt
     m_currentBookTitle = title;
     m_currentBookAuthor = author;
     m_currentBookMarkdown = markdown;
+    m_currentBookObsidianMarkdown = obsidianMarkdown;
+    m_currentBookPlainText = plainText;
     m_annotationStatusText = statusText;
     emit currentBookChanged();
 }

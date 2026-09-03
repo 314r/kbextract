@@ -66,6 +66,10 @@ ApplicationWindow {
         id: koboLibrary
     }
 
+    ClipboardHelper {
+        id: clipboardHelper
+    }
+
     OmarchyTheme {
         id: omarchyTheme
         onPaletteChanged: window.applyOmarchyTheme()
@@ -118,20 +122,27 @@ ApplicationWindow {
             Button {
                 id: modeButton
 
-                Layout.preferredWidth: 88
-                Layout.preferredHeight: Math.max(28, implicitHeight)
+                implicitWidth: 36
+                implicitHeight: 30
+                Layout.preferredWidth: implicitWidth
+                Layout.preferredHeight: implicitHeight
                 text: Theme.mode === "omarchy" ? qsTr("OMARCHY") : (Theme.mode === "light" ? qsTr("LIGHT") : qsTr("DARK"))
-                font.family: Theme.monoFont
-                font.pixelSize: Theme.fontSizeBody
-                font.weight: Font.Medium
+                display: AbstractButton.IconOnly
+                hoverEnabled: true
+                icon.source: Theme.mode === "omarchy"
+                    ? "assets/icons/theme-omarchy.svg"
+                    : (Theme.mode === "light"
+                        ? "assets/icons/theme-light.svg"
+                        : "assets/icons/theme-dark.svg")
+                icon.width: 18
+                icon.height: 18
+                icon.color: Theme.text
+                icon.cache: true
+                Accessible.name: qsTr("%1 theme").arg(text)
 
-                contentItem: Text {
-                    text: modeButton.text
-                    color: Theme.text
-                    font: modeButton.font
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: text
 
                 background: Rectangle {
                     color: modeButton.down || modeButton.hovered ? Theme.surfaceHover : "transparent"
@@ -526,6 +537,15 @@ ApplicationWindow {
                             topPadding: 28
                             bottomPadding: 28
 
+                            onTextChanged: {
+                                copyTextFeedbackTimer.stop()
+                                copyObsidianFeedbackTimer.stop()
+                                copyAllFeedbackTimer.stop()
+                                copyTextButton.copyConfirmed = false
+                                copyObsidianButton.copyConfirmed = false
+                                copyAllButton.copyConfirmed = false
+                            }
+
                             FontMetrics {
                                 id: annotationFontMetrics
                                 font: annotationText.font
@@ -608,6 +628,85 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             height: 1
+        }
+
+        Row {
+            anchors.right: parent.right
+            anchors.rightMargin: 24
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 8
+
+            ToolButton {
+                id: copyTextButton
+
+                property bool copyConfirmed: false
+
+                width: 96
+                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY TEXT")
+                enabled: koboLibrary.currentBookPlainText.length > 0
+
+                onClicked: {
+                    if (clipboardHelper.copyText(koboLibrary.currentBookPlainText)) {
+                        copyConfirmed = true
+                        copyTextFeedbackTimer.restart()
+                    }
+                }
+            }
+
+            ToolButton {
+                id: copyObsidianButton
+
+                property bool copyConfirmed: false
+
+                width: 112
+                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY OBS MD")
+                enabled: koboLibrary.currentBookObsidianMarkdown.length > 0
+
+                onClicked: {
+                    if (clipboardHelper.copyText(koboLibrary.currentBookObsidianMarkdown)) {
+                        copyConfirmed = true
+                        copyObsidianFeedbackTimer.restart()
+                    }
+                }
+            }
+
+            ToolButton {
+                id: copyAllButton
+
+                property bool copyConfirmed: false
+
+                width: 88
+                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY MD")
+                enabled: koboLibrary.currentBookMarkdown.length > 0
+
+                onClicked: {
+                    if (clipboardHelper.copyText(koboLibrary.currentBookMarkdown)) {
+                        copyConfirmed = true
+                        copyAllFeedbackTimer.restart()
+                    }
+                }
+            }
+        }
+
+        Timer {
+            id: copyTextFeedbackTimer
+
+            interval: 1500
+            onTriggered: copyTextButton.copyConfirmed = false
+        }
+
+        Timer {
+            id: copyObsidianFeedbackTimer
+
+            interval: 1500
+            onTriggered: copyObsidianButton.copyConfirmed = false
+        }
+
+        Timer {
+            id: copyAllFeedbackTimer
+
+            interval: 1500
+            onTriggered: copyAllButton.copyConfirmed = false
         }
     }
 }

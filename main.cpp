@@ -1,6 +1,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 
+#include "clipboard_helper.h"
 #include "kobo_library.h"
 #include "markdown_highlighter.h"
 #include "omarchy_theme.h"
@@ -13,6 +14,7 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("kbextract"));
     app.setApplicationDisplayName(QStringLiteral("kbextract"));
 
+    qmlRegisterType<ClipboardHelper>("Kbextract", 1, 0, "ClipboardHelper");
     qmlRegisterType<KoboLibrary>("Kbextract", 1, 0, "KoboLibrary");
     qmlRegisterType<MarkdownHighlighter>("Kbextract", 1, 0, "MarkdownHighlighter");
     qmlRegisterType<OmarchyTheme>("Kbextract", 1, 0, "OmarchyTheme");

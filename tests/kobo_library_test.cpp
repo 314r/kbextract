@@ -180,22 +180,52 @@ void KoboLibraryTest::formatsSelectedBookAsMarkdown()
         "second note line\n\n\n"
         "## Chapter Two\n\n"
         "> Later text"));
+    QCOMPARE(library.currentBookObsidianMarkdown(), QStringLiteral(
+        "## Chapter One\n\n"
+        "> [!quote]\n"
+        "> Stars *stay* & <tag> second line\n"
+        ">\n"
+        "> Another paragraph continues here\n\n\n"
+        "> [!quote]\n"
+        "> Selected note text\n\n"
+        "Written note\n"
+        "second note line\n\n\n"
+        "## Chapter Two\n\n"
+        "> [!quote]\n"
+        "> Later text"));
+    QCOMPARE(library.currentBookPlainText(), QStringLiteral(
+        "Chapter One\n\n"
+        "Stars *stay* & <tag> second line\n\n"
+        "Another paragraph continues here\n\n\n"
+        "Selected note text\n\n"
+        "Written note\n"
+        "second note line\n\n\n"
+        "Chapter Two\n\n"
+        "Later text"));
 
     const int betaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-beta"));
     QVERIFY(betaIndex >= 0);
     library.setCurrentBookIndex(betaIndex);
     QCOMPARE(library.currentBookMarkdown(), QStringLiteral("## Beta Chapter\n\nMargin note"));
+    QCOMPARE(library.currentBookObsidianMarkdown(), QStringLiteral("## Beta Chapter\n\nMargin note"));
+    QCOMPARE(library.currentBookPlainText(), QStringLiteral("Beta Chapter\n\nMargin note"));
 
     const int fallbackIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("missing-volume"));
     QVERIFY(fallbackIndex >= 0);
     library.setCurrentBookIndex(fallbackIndex);
     QCOMPARE(library.currentBookMarkdown(), QStringLiteral("## Untitled chapter\n\n> Orphaned highlight"));
+    QCOMPARE(library.currentBookObsidianMarkdown(), QStringLiteral(
+        "## Untitled chapter\n\n> [!quote]\n> Orphaned highlight"));
+    QCOMPARE(library.currentBookPlainText(), QStringLiteral(
+        "Untitled chapter\n\nOrphaned highlight"));
 
     library.setCurrentBookIndex(-1);
     QCOMPARE(library.currentBookIndex(), -1);
     QVERIFY(library.currentBookTitle().isEmpty());
     QVERIFY(library.currentBookAuthor().isEmpty());
     QVERIFY(library.currentBookMarkdown().isEmpty());
+    QVERIFY(library.currentBookObsidianMarkdown().isEmpty());
+    QVERIFY(library.currentBookPlainText().isEmpty());
 }
 
 void KoboLibraryTest::clearsSelectedBookOnReload()
@@ -213,6 +243,8 @@ void KoboLibraryTest::clearsSelectedBookOnReload()
     library.refreshDevices();
     QCOMPARE(library.currentBookIndex(), -1);
     QVERIFY(library.currentBookMarkdown().isEmpty());
+    QVERIFY(library.currentBookObsidianMarkdown().isEmpty());
+    QVERIFY(library.currentBookPlainText().isEmpty());
 }
 
 void KoboLibraryTest::rejectsMissingDatabase()

@@ -16,6 +16,8 @@ class KoboLibrary : public QObject
     Q_PROPERTY(QString currentBookTitle READ currentBookTitle NOTIFY currentBookChanged)
     Q_PROPERTY(QString currentBookAuthor READ currentBookAuthor NOTIFY currentBookChanged)
     Q_PROPERTY(QString currentBookMarkdown READ currentBookMarkdown NOTIFY currentBookChanged)
+    Q_PROPERTY(QString currentBookObsidianMarkdown READ currentBookObsidianMarkdown NOTIFY currentBookChanged)
+    Q_PROPERTY(QString currentBookPlainText READ currentBookPlainText NOTIFY currentBookChanged)
     Q_PROPERTY(QString annotationStatusText READ annotationStatusText NOTIFY currentBookChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
 
@@ -30,6 +32,8 @@ public:
     QString currentBookTitle() const;
     QString currentBookAuthor() const;
     QString currentBookMarkdown() const;
+    QString currentBookObsidianMarkdown() const;
+    QString currentBookPlainText() const;
     QString annotationStatusText() const;
     QString statusText() const;
 
@@ -53,7 +57,8 @@ private:
     void setBooks(QVariantList books);
     void clearCurrentBook();
     void setCurrentBookState(int index, const QString &title, const QString &author,
-                             const QString &markdown, const QString &statusText);
+                             const QString &markdown, const QString &obsidianMarkdown,
+                             const QString &plainText, const QString &statusText);
     void setStatusText(const QString &statusText);
     QString normalizedDatabasePath(const QString &databasePath) const;
     QVariantMap manualDevice(const QString &databasePath) const;
@@ -66,6 +71,8 @@ private:
     QString m_currentBookTitle;
     QString m_currentBookAuthor;
     QString m_currentBookMarkdown;
+    QString m_currentBookObsidianMarkdown;
+    QString m_currentBookPlainText;
     QString m_annotationStatusText;
     QString m_statusText;
     QString m_connectionName;
