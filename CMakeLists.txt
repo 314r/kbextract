@@ -8,9 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(GNUInstallDirs)
 include(CTest)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Sql Svg)
+find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Sql Svg)
 
-qt_standard_project_setup(REQUIRES 6.8)
+qt_standard_project_setup(REQUIRES 6.9)
 
 qt_add_executable(kbextract
     main.cpp
@@ -58,7 +58,7 @@ install(FILES kbextract.desktop
 )
 
 if(BUILD_TESTING)
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
+    find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
 
     qt_add_executable(kobo_library_tests
         tests/kobo_library_test.cpp
