@@ -339,16 +339,17 @@ ApplicationWindow {
                             required property int index
                             required property var modelData
                             readonly property bool selected: bookList.currentIndex === index
+                            readonly property bool outlined: selected || down
                             readonly property int separatorThickness: activeFocus ? 2 : 1
 
                             width: bookList.width
-                            z: selected ? 1 : 0
+                            z: outlined ? 1 : 0
                             height: Math.max(
                                 72,
                                 contentItem.implicitHeight + topPadding * 2 + 2
                             )
                             topPadding: 8
-                            bottomPadding: selected ? topPadding : topPadding + separatorThickness
+                            bottomPadding: outlined ? topPadding : topPadding + separatorThickness
                             hoverEnabled: true
 
                             contentItem: Item {
@@ -399,20 +400,20 @@ ApplicationWindow {
 
                             background: Rectangle {
                                 x: 0
-                                y: bookRow.selected ? -1 : 0
+                                y: bookRow.outlined ? -1 : 0
                                 width: bookRow.width
-                                height: bookRow.height + (bookRow.selected ? 1 : 0)
-                                color: bookRow.selected
+                                height: bookRow.height + (bookRow.outlined ? 1 : 0)
+                                color: bookRow.outlined
                                     ? Theme.surfaceSelected
                                     : (bookRow.hovered ? Theme.surfaceHover : "transparent")
-                                border.width: bookRow.selected ? 2 : 0
+                                border.width: bookRow.outlined ? 2 : 0
                                 border.color: Theme.accent
 
                                 Rectangle {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.bottom: parent.bottom
-                                    visible: !bookRow.selected
+                                    visible: !bookRow.outlined
                                     height: bookRow.separatorThickness
                                     color: bookRow.activeFocus ? Theme.accent : Theme.line
                                 }
@@ -528,12 +529,31 @@ ApplicationWindow {
                     ScrollView {
                         id: annotationScroll
 
+                        function resetToTop() {
+                            annotationText.deselect()
+                            annotationText.cursorPosition = 0
+
+                            const flickable = annotationScroll.contentItem
+                            flickable.cancelFlick()
+                            flickable.contentY = flickable.originY
+                            flickable.returnToBounds()
+                        }
+
                         anchors.fill: parent
                         visible: koboLibrary.currentBookIndex >= 0
                             && koboLibrary.currentBookMarkdown.length > 0
                         clip: true
                         contentWidth: availableWidth
                         contentHeight: annotationText.height
+
+                        Connections {
+                            target: koboLibrary
+
+                            function onCurrentBookChanged() {
+                                annotationScroll.resetToTop()
+                                Qt.callLater(annotationScroll.resetToTop)
+                            }
+                        }
 
                         TextArea {
                             id: annotationText

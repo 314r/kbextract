@@ -1,0 +1,2 @@
+- when i scroll on a text area and switch book, the position is not reseted.
+- in the README : give bjarneo full credits for the skeleton of the app, and explain how we used omadji to bootstrap kbextract
