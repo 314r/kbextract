@@ -26,13 +26,6 @@ QtObject {
         "yellow": "#8b671f",
         "cyan": "#3d7089"
     })
-    property var systemFontSizes: ({
-        "caption": 10,
-        "body": 12,
-        "heading": 16,
-        "reader": 15,
-        "readerHeading": 20
-    })
     property string systemUiFont: "sans-serif"
     property string systemMonoFont: "monospace"
 
@@ -52,11 +45,6 @@ QtObject {
         "green": "#687d60",
         "yellow": "#877364",
         "cyan": "#b5bfc4"
-    })
-    property var omarchyFontSizes: ({
-        "caption": 10,
-        "body": 12,
-        "heading": 16
     })
 
     readonly property string effectiveMode: mode === "omarchy" && !omarchyAvailable ? "system" : mode
@@ -92,11 +80,15 @@ QtObject {
 
     readonly property string uiFont: systemUiFont
     readonly property string monoFont: systemMonoFont
-    readonly property int fontSizeCaption: omarchyMode ? omarchyFontSizes.caption : systemFontSizes.caption
-    readonly property int fontSizeBody: omarchyMode ? omarchyFontSizes.body : systemFontSizes.body
-    readonly property int fontSizeHeading: omarchyMode ? omarchyFontSizes.heading : systemFontSizes.heading
-    readonly property int fontSizeReader: omarchyMode ? Math.max(1, Math.round(omarchyFontSizes.body * 1.25)) : systemFontSizes.reader
-    readonly property int fontSizeReaderHeading: omarchyMode ? Math.max(1, Math.round(omarchyFontSizes.body * 1.667)) : systemFontSizes.readerHeading
+    // Logical pixels: Qt applies display scaling. Color modes never resize text.
+    readonly property int fontSizeCaption: 10
+    readonly property int fontSizeBody: 12
+    readonly property int fontSizeHeading: 16
+    readonly property int fontSizeReader: 15
+    readonly property int fontSizeReaderHeading: 20
+    readonly property int controlMinHeight: 30
+    readonly property int controlHorizontalPadding: 10
+    readonly property int controlVerticalPadding: 6
     readonly property int radius: 0
     readonly property int smallRadius: 0
 }

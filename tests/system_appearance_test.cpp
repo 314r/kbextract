@@ -22,7 +22,7 @@ class SystemAppearanceTest : public QObject
 
 private slots:
     void mapsPlatformPaletteToThemeTokens();
-    void scalesFontRolesFromSystemFont();
+    void followsApplicationFontChanges();
     void suppliesLiveApplicationAppearance();
 };
 
@@ -50,18 +50,18 @@ void SystemAppearanceTest::mapsPlatformPaletteToThemeTokens()
     QVERIFY(paletteColor(mapped, QStringLiteral("selection")).isValid());
 }
 
-void SystemAppearanceTest::scalesFontRolesFromSystemFont()
+void SystemAppearanceTest::followsApplicationFontChanges()
 {
-    QFont font;
-    font.setPixelSize(18);
+    const QFont original = QGuiApplication::font();
+    const auto restore = qScopeGuard([original] { QGuiApplication::setFont(original); });
+    SystemAppearance appearance;
+    QSignalSpy fontsChanged(&appearance, &SystemAppearance::fontsChanged);
+    QFont changed(QStringLiteral("monospace"));
+    changed.setPixelSize(24);
+    QGuiApplication::setFont(changed);
 
-    const QVariantMap sizes = SystemAppearance::fontSizesFrom(font);
-
-    QCOMPARE(sizes.value(QStringLiteral("caption")).toInt(), 15);
-    QCOMPARE(sizes.value(QStringLiteral("body")).toInt(), 18);
-    QCOMPARE(sizes.value(QStringLiteral("heading")).toInt(), 24);
-    QCOMPARE(sizes.value(QStringLiteral("reader")).toInt(), 23);
-    QCOMPARE(sizes.value(QStringLiteral("readerHeading")).toInt(), 30);
+    QTRY_COMPARE(appearance.uiFont(), QGuiApplication::font());
+    QVERIFY(!fontsChanged.isEmpty());
 }
 
 void SystemAppearanceTest::suppliesLiveApplicationAppearance()
@@ -72,7 +72,6 @@ void SystemAppearanceTest::suppliesLiveApplicationAppearance()
     QVERIFY(appearance.palette().contains(QStringLiteral("accent")));
     QVERIFY(!appearance.uiFont().family().isEmpty());
     QVERIFY(!appearance.fixedFont().family().isEmpty());
-    QVERIFY(appearance.fontSizes().value(QStringLiteral("body")).toInt() > 0);
 }
 
 QTEST_MAIN(SystemAppearanceTest)

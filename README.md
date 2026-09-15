@@ -49,11 +49,18 @@ testing, installing, or packaging.
 ## Appearance
 
 The app defaults to System mode and follows the operating system's palette,
-accent, light/dark preference, UI font, fixed-width font, and base text size.
-Changes are applied while the app is running. Use the header button to cycle
-between System, Light, and Dark modes. On Omarchy systems a fourth Omarchy mode
-is offered and follows `~/.local/state/omarchy/current/theme/colors.toml`, the
-active theme's `shell.toml`, and `~/.config/omarchy/shell.toml` overrides.
+accent, light/dark preference, UI font family, and fixed-width font family.
+Changes are applied while the app is running. Use the theme icon in the header
+to open Settings, then choose System, Light, or Dark under Appearance. On
+Omarchy systems a fourth Omarchy mode is offered and follows
+`~/.local/state/omarchy/current/theme/colors.toml`.
+
+Text uses the same compact scale in every theme and on every desktop: 12 logical
+pixels for UI text, 10 for captions, 16 for UI headings, 15 for reader text, and
+20 for reader headings. Qt applies the display's scaling, including Retina.
+Desktop font-size settings and Omarchy shell font overrides do not change these
+sizes. Buttons and selectors use consistent padding and grow to fit their text.
+The app retains its custom control design on macOS and uses native file dialogs.
 
 The selected mode is saved with Qt's platform settings backend. A saved
 Omarchy selection falls back to System if Omarchy is not available.

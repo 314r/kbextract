@@ -45,7 +45,9 @@ qt_add_qml_module(kbextract
     URI Kbextract
     VERSION 1.0
     QML_FILES
+        AppearanceSettingsPage.qml
         Main.qml
+        SettingsWindow.qml
         Theme.qml
     RESOURCES
         assets/icons/theme-dark.svg
@@ -204,6 +206,33 @@ if(BUILD_TESTING)
     set_tests_properties(system_appearance_tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME="
     )
+
+    qt_add_executable(appearance_ui_tests
+        tests/appearance_ui_test.cpp
+        clipboard_helper.cpp clipboard_helper.h
+        kobo_library.cpp kobo_library.h
+        markdown_highlighter.cpp markdown_highlighter.h
+        omarchy_theme.cpp omarchy_theme.h
+        system_appearance.cpp system_appearance.h
+    )
+    target_include_directories(appearance_ui_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(appearance_ui_tests PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
+        Qt6::Sql Qt6::Svg Qt6::Test
+    )
+    qt_add_resources(appearance_ui_tests "appearance_ui"
+        PREFIX "/qt/qml/Kbextract"
+        FILES
+            Main.qml SettingsWindow.qml AppearanceSettingsPage.qml Theme.qml
+            assets/icons/theme-system.svg assets/icons/theme-light.svg
+            assets/icons/theme-dark.svg assets/icons/theme-omarchy.svg
+    )
+    foreach(scale IN ITEMS 1 1.5 2)
+        add_test(NAME appearance_ui_tests_scale_${scale} COMMAND appearance_ui_tests)
+        set_tests_properties(appearance_ui_tests_scale_${scale} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=${scale}"
+        )
+    endforeach()
 
     qt_add_executable(clipboard_helper_tests
         tests/clipboard_helper_test.cpp

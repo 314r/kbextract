@@ -4,7 +4,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
 #include <QTextStream>
 
 namespace {
@@ -12,11 +11,6 @@ namespace {
 QString defaultOmarchyStateRoot()
 {
     return QDir::homePath() + QStringLiteral("/.local/state/omarchy/current");
-}
-
-QString defaultOmarchyUserShellPath()
-{
-    return QDir::homePath() + QStringLiteral("/.config/omarchy/shell.toml");
 }
 
 QString canonicalPaletteKey(const QString &key)
@@ -81,95 +75,16 @@ QString readTextFile(const QString &path)
     return QString::fromUtf8(file.readAll()).trimmed();
 }
 
-QHash<QString, int> readFontSettings(const QString &path)
-{
-    QHash<QString, int> settings;
-    if (path.isEmpty())
-        return settings;
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return settings;
-
-    QTextStream stream(&file);
-    QString section;
-    while (!stream.atEnd()) {
-        QString line = stream.readLine().trimmed();
-        const qsizetype comment = line.indexOf(QLatin1Char('#'));
-        if (comment >= 0)
-            line.truncate(comment);
-        line = line.trimmed();
-
-        if (line.isEmpty())
-            continue;
-
-        if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']'))) {
-            section = line.mid(1, line.size() - 2).trimmed();
-            continue;
-        }
-
-        if (section != QLatin1String("font"))
-            continue;
-
-        const qsizetype separator = line.indexOf(QLatin1Char('='));
-        if (separator < 0)
-            continue;
-
-        const QString key = line.left(separator).trimmed();
-        QString value = line.mid(separator + 1).trimmed();
-        if (value.size() >= 2
-            && ((value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))
-                || (value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\''))))) {
-            value = value.mid(1, value.size() - 2);
-        }
-
-        bool ok = false;
-        const int pixelSize = value.toInt(&ok);
-        if (ok)
-            settings.insert(key, pixelSize);
-    }
-
-    return settings;
-}
-
-QVariantMap loadFontSizes(const QString &themeShellPath, const QString &userShellPath)
-{
-    QHash<QString, int> settings = readFontSettings(themeShellPath);
-    const QHash<QString, int> userSettings = readFontSettings(userShellPath);
-    for (auto it = userSettings.cbegin(); it != userSettings.cend(); ++it)
-        settings.insert(it.key(), it.value());
-
-    int baseSize = settings.value(QStringLiteral("base-size"), 12);
-    baseSize = qMax(1, baseSize);
-
-    const auto fontSize = [&settings, baseSize](const QString &key, double multiplier) {
-        const int overrideSize = settings.value(key, 0);
-        return overrideSize > 0 ? overrideSize : qMax(1, qRound(baseSize * multiplier));
-    };
-
-    return {
-        {QStringLiteral("caption"), fontSize(QStringLiteral("caption"), 0.833)},
-        {QStringLiteral("body"), fontSize(QStringLiteral("body"), 1.0)},
-        {QStringLiteral("heading"), fontSize(QStringLiteral("heading"), 1.333)},
-    };
-}
-
 } // namespace
 
 OmarchyTheme::OmarchyTheme(QObject *parent)
-    : OmarchyTheme(defaultOmarchyStateRoot(), defaultOmarchyUserShellPath(), parent)
+    : OmarchyTheme(defaultOmarchyStateRoot(), parent)
 {
 }
 
 OmarchyTheme::OmarchyTheme(const QString &stateRoot, QObject *parent)
-    : OmarchyTheme(stateRoot, QString(), parent)
-{
-}
-
-OmarchyTheme::OmarchyTheme(const QString &stateRoot, const QString &userShellPath, QObject *parent)
     : QObject(parent)
     , m_stateRoot(QDir::cleanPath(stateRoot))
-    , m_userShellPath(userShellPath.isEmpty() ? QString() : QDir::cleanPath(userShellPath))
 {
     connect(&m_refreshTimer, &QTimer::timeout, this, &OmarchyTheme::reload);
     m_refreshTimer.setInterval(1500);
@@ -179,11 +94,6 @@ OmarchyTheme::OmarchyTheme(const QString &stateRoot, const QString &userShellPat
 QVariantMap OmarchyTheme::palette() const
 {
     return m_palette;
-}
-
-QVariantMap OmarchyTheme::fontSizes() const
-{
-    return m_fontSizes;
 }
 
 bool OmarchyTheme::dark() const
@@ -224,9 +134,6 @@ void OmarchyTheme::setActive(bool active)
 void OmarchyTheme::reload()
 {
     QVariantMap palette = fallbackPalette();
-    const QVariantMap fontSizes = loadFontSizes(
-        QDir(m_stateRoot).filePath(QStringLiteral("theme/shell.toml")),
-        m_userShellPath);
     QString mode = QStringLiteral("dark");
 
     const QString colorsPath = QDir(m_stateRoot).filePath(QStringLiteral("theme/colors.toml"));
@@ -264,20 +171,16 @@ void OmarchyTheme::reload()
     const bool dark = mode.compare(QLatin1String("dark"), Qt::CaseInsensitive) == 0;
     const QString name = readTextFile(QDir(m_stateRoot).filePath(QStringLiteral("theme.name")));
     const bool paletteDidChange = m_palette != palette || m_dark != dark;
-    const bool fontSizesDidChange = m_fontSizes != fontSizes;
     const bool nameDidChange = m_name != name;
     const bool availabilityDidChange = m_available != available;
 
     m_palette = std::move(palette);
-    m_fontSizes = fontSizes;
     m_dark = dark;
     m_name = name;
     m_available = available;
 
     if (paletteDidChange)
         emit paletteChanged();
-    if (fontSizesDidChange)
-        emit fontSizesChanged();
     if (nameDidChange)
         emit nameChanged();
     if (availabilityDidChange)

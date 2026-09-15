@@ -16,18 +16,18 @@ ApplicationWindow {
     minimumHeight: 680
     title: qsTr("kbextract")
     color: Theme.canvas
+    font.family: Theme.uiFont
+    font.pixelSize: Theme.fontSizeBody
 
     function applyOmarchyTheme() {
         Theme.omarchyDark = omarchyTheme.dark
         Theme.omarchyPalette = omarchyTheme.palette
-        Theme.omarchyFontSizes = omarchyTheme.fontSizes
         Theme.omarchyAvailable = omarchyTheme.available
     }
 
     function applySystemAppearance() {
         Theme.systemDark = systemAppearance.dark
         Theme.systemPalette = systemAppearance.palette
-        Theme.systemFontSizes = systemAppearance.fontSizes
         Theme.systemUiFont = systemAppearance.uiFont.family
         Theme.systemMonoFont = systemAppearance.fixedFont.family
     }
@@ -43,11 +43,17 @@ ApplicationWindow {
         return availableThemeModes().indexOf(candidate) >= 0 ? candidate : "system"
     }
 
-    function cycleThemeMode() {
-        const modes = availableThemeModes()
-        const currentIndex = Math.max(0, modes.indexOf(Theme.mode))
-        Theme.mode = modes[(currentIndex + 1) % modes.length]
-        appearanceSettings.colorMode = Theme.mode
+    function setThemeMode(candidate) {
+        const normalizedMode = normalizedThemeMode(candidate)
+        Theme.mode = normalizedMode
+        if (appearanceSettings.colorMode !== normalizedMode)
+            appearanceSettings.colorMode = normalizedMode
+    }
+
+    function openSettings() {
+        settingsWindow.show()
+        settingsWindow.raise()
+        settingsWindow.requestActivate()
     }
 
     function themeModeLabel() {
@@ -75,11 +81,23 @@ ApplicationWindow {
 
         property color ink: control.enabled ? Theme.text : Theme.textFaint
         property color fill: control.down || control.hovered ? Theme.surfaceHover : Theme.surface
+        property string alternateText: ""
 
-        implicitHeight: Math.max(30, contentItem.implicitHeight + topPadding + bottomPadding)
+        horizontalPadding: Theme.controlHorizontalPadding
+        verticalPadding: Theme.controlVerticalPadding
+        implicitWidth: Math.ceil(Math.max(contentItem.implicitWidth, alternateLabelMetrics.advanceWidth))
+            + leftPadding + rightPadding
+        implicitHeight: Math.max(Theme.controlMinHeight,
+            Math.ceil(contentItem.implicitHeight) + topPadding + bottomPadding)
         font.family: Theme.monoFont
         font.pixelSize: Theme.fontSizeBody
         font.weight: Font.Medium
+
+        TextMetrics {
+            id: alternateLabelMetrics
+            font: control.font
+            text: control.alternateText
+        }
 
         contentItem: Text {
             text: control.text
@@ -121,13 +139,10 @@ ApplicationWindow {
         id: omarchyTheme
         active: Theme.mode === "omarchy" && available
         onPaletteChanged: window.applyOmarchyTheme()
-        onFontSizesChanged: window.applyOmarchyTheme()
         onAvailableChanged: {
             window.applyOmarchyTheme()
-            if (!available && Theme.mode === "omarchy") {
-                Theme.mode = "system"
-                appearanceSettings.colorMode = Theme.mode
-            }
+            if (!available && Theme.mode === "omarchy")
+                window.setThemeMode("system")
         }
     }
 
@@ -141,6 +156,18 @@ ApplicationWindow {
         id: appearanceSettings
         category: "Appearance"
         property string colorMode: "system"
+    }
+
+    SettingsWindow {
+        id: settingsWindow
+
+        transientParent: window
+        currentThemeMode: Theme.mode
+        availableThemeModes: window.availableThemeModes()
+
+        onThemeModeSelected: function(mode) {
+            window.setThemeMode(mode)
+        }
     }
 
     FileDialog {
@@ -158,14 +185,14 @@ ApplicationWindow {
     Component.onCompleted: {
         applySystemAppearance()
         applyOmarchyTheme()
-        Theme.mode = normalizedThemeMode(appearanceSettings.colorMode)
-        if (Theme.mode !== appearanceSettings.colorMode)
-            appearanceSettings.colorMode = Theme.mode
+        setThemeMode(appearanceSettings.colorMode)
         koboLibrary.refreshDevices()
     }
 
+    onClosing: settingsWindow.close()
+
     header: Rectangle {
-        implicitHeight: Math.max(48, modeButton.implicitHeight + 20)
+        implicitHeight: Math.max(48, modeButton.implicitHeight + 18)
         color: Theme.canvasGlass
 
         SeparatorLine {
@@ -185,6 +212,7 @@ ApplicationWindow {
 
             Button {
                 id: modeButton
+                objectName: "modeButton"
 
                 implicitWidth: 36
                 implicitHeight: 30
@@ -198,11 +226,13 @@ ApplicationWindow {
                 icon.height: 18
                 icon.color: Theme.text
                 icon.cache: true
-                Accessible.name: qsTr("%1 theme").arg(text)
+                Accessible.name: qsTr("Open settings. Current theme: %1").arg(text)
 
                 ToolTip.visible: hovered
                 ToolTip.delay: 500
-                ToolTip.text: text
+                ToolTip.text: qsTr("Settings — Theme: %1").arg(text)
+                ToolTip.toolTip.font.family: Theme.uiFont
+                ToolTip.toolTip.font.pixelSize: Theme.fontSizeBody
 
                 background: Rectangle {
                     color: modeButton.down || modeButton.hovered ? Theme.surfaceHover : "transparent"
@@ -210,7 +240,7 @@ ApplicationWindow {
                     border.color: modeButton.activeFocus ? Theme.accent : Theme.line
                 }
 
-                onClicked: window.cycleThemeMode()
+                onClicked: window.openSettings()
             }
         }
     }
@@ -247,9 +277,16 @@ ApplicationWindow {
 
                 ComboBox {
                     id: deviceSelector
+                    objectName: "deviceSelector"
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.max(34, implicitHeight)
+                    Layout.preferredHeight: implicitHeight
+                    implicitHeight: Math.max(Theme.controlMinHeight,
+                        Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
+                        + topPadding + bottomPadding)
+                    leftPadding: Theme.controlHorizontalPadding
+                    rightPadding: Theme.controlHorizontalPadding + indicator.implicitWidth + spacing
+                    verticalPadding: Theme.controlVerticalPadding
                     model: koboLibrary.devices
                     textRole: "displayName"
                     currentIndex: koboLibrary.currentDeviceIndex
@@ -262,7 +299,10 @@ ApplicationWindow {
                         required property var modelData
 
                         width: deviceSelector.width
-                        height: Math.max(34, implicitHeight)
+                        implicitHeight: Math.max(Theme.controlMinHeight,
+                            Math.ceil(contentItem.implicitHeight) + topPadding + bottomPadding)
+                        horizontalPadding: Theme.controlHorizontalPadding
+                        verticalPadding: Theme.controlVerticalPadding
                         text: modelData.displayName
                         highlighted: deviceSelector.highlightedIndex === index
                         font.family: Theme.uiFont
@@ -282,8 +322,6 @@ ApplicationWindow {
                     }
 
                     contentItem: Text {
-                        leftPadding: 10
-                        rightPadding: 28
                         text: deviceSelector.displayText.length > 0 ? deviceSelector.displayText : qsTr("No Kobo device")
                         color: deviceSelector.enabled ? Theme.text : Theme.textFaint
                         font: deviceSelector.font
@@ -292,7 +330,7 @@ ApplicationWindow {
                     }
 
                     indicator: Text {
-                        x: deviceSelector.width - width - 10
+                        x: deviceSelector.width - width - Theme.controlHorizontalPadding
                         y: (deviceSelector.height - height) / 2
                         text: qsTr("v")
                         color: deviceSelector.enabled ? Theme.textMuted : Theme.textFaint
@@ -725,7 +763,7 @@ ApplicationWindow {
     }
 
     footer: Rectangle {
-        implicitHeight: 48
+        implicitHeight: Math.max(48, copyButtons.implicitHeight + 18)
         color: Theme.panel
 
         SeparatorLine {
@@ -736,6 +774,7 @@ ApplicationWindow {
         }
 
         Row {
+            id: copyButtons
             anchors.right: parent.right
             anchors.rightMargin: 24
             anchors.verticalCenter: parent.verticalCenter
@@ -743,11 +782,12 @@ ApplicationWindow {
 
             ToolButton {
                 id: copyTextButton
+                objectName: "copyTextButton"
 
                 property bool copyConfirmed: false
 
-                width: 96
                 text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY TEXT")
+                alternateText: copyConfirmed ? qsTr("COPY TEXT") : qsTr("COPIED")
                 enabled: koboLibrary.currentBookPlainText.length > 0
 
                 onClicked: {
@@ -760,11 +800,12 @@ ApplicationWindow {
 
             ToolButton {
                 id: copyObsidianButton
+                objectName: "copyObsidianButton"
 
                 property bool copyConfirmed: false
 
-                width: 112
                 text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY OBS MD")
+                alternateText: copyConfirmed ? qsTr("COPY OBS MD") : qsTr("COPIED")
                 enabled: koboLibrary.currentBookObsidianMarkdown.length > 0
 
                 onClicked: {
@@ -777,11 +818,12 @@ ApplicationWindow {
 
             ToolButton {
                 id: copyAllButton
+                objectName: "copyAllButton"
 
                 property bool copyConfirmed: false
 
-                width: 88
                 text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY MD")
+                alternateText: copyConfirmed ? qsTr("COPY MD") : qsTr("COPIED")
                 enabled: koboLibrary.currentBookMarkdown.length > 0
 
                 onClicked: {
