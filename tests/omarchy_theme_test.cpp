@@ -47,6 +47,7 @@ private slots:
     void userFontSizesOverrideTheme();
     void ignoresInvalidFontSizes();
     void reloadsFontSizeChanges();
+    void reportsAvailabilityAndControlsPolling();
 };
 
 void OmarchyThemeTest::loadsCanonicalPalette()
@@ -254,6 +255,33 @@ void OmarchyThemeTest::reloadsFontSizeChanges()
     QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("caption")), 12);
     QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("body")), 15);
     QCOMPARE(fontSize(theme.fontSizes(), QStringLiteral("heading")), 20);
+}
+
+void OmarchyThemeTest::reportsAvailabilityAndControlsPolling()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+
+    OmarchyTheme theme(directory.path());
+    QVERIFY(!theme.available());
+    QVERIFY(!theme.active());
+
+    QSignalSpy availableChangedSpy(&theme, &OmarchyTheme::availableChanged);
+    QVERIFY(writeTextFile(directory.filePath(QStringLiteral("theme/colors.toml")), QByteArrayLiteral(
+        "mode = \"dark\"\n"
+        "background = \"#111111\"\n")));
+    theme.reload();
+
+    QVERIFY(theme.available());
+    QCOMPARE(availableChangedSpy.count(), 1);
+
+    QSignalSpy activeChangedSpy(&theme, &OmarchyTheme::activeChanged);
+    theme.setActive(true);
+    QVERIFY(theme.active());
+    QCOMPARE(activeChangedSpy.count(), 1);
+    theme.setActive(false);
+    QVERIFY(!theme.active());
+    QCOMPARE(activeChangedSpy.count(), 2);
 }
 
 QTEST_GUILESS_MAIN(OmarchyThemeTest)

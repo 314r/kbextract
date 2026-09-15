@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86-64
+            runner: ubuntu-22.04
+            qt_arch: gcc_64
+          - name: Windows x64
+            runner: windows-2022
+            qt_arch: win64_msvc2022_64
+          - name: macOS Apple Silicon
+            runner: macos-15
+            qt_arch: clang_64
+          - name: macOS Intel
+            runner: macos-15-intel
+            qt_arch: clang_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.9.3
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

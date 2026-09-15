@@ -1,0 +1,143 @@
+name: Packages
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version in MAJOR.MINOR.PATCH form
+        required: true
+        default: 0.1.0
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86-64
+            runner: ubuntu-22.04
+            platform: linux
+            qt_arch: gcc_64
+          - name: Windows x64
+            runner: windows-2022
+            platform: windows
+            qt_arch: win64_msvc2022_64
+          - name: macOS Apple Silicon
+            runner: macos-15
+            platform: macos-arm64
+            qt_arch: clang_64
+          - name: macOS Intel
+            runner: macos-15-intel
+            platform: macos-x86_64
+            qt_arch: clang_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve package version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            package_version="${{ inputs.version }}"
+          else
+            package_version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Package version must use MAJOR.MINOR.PATCH form" >&2
+            exit 1
+          fi
+          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
+
+      - name: Install Linux packaging dependencies
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install --yes libfuse2 dpkg-dev fakeroot
+
+      - name: Install NSIS
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: choco install nsis --no-progress --yes
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.9.3
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Configure
+        shell: bash
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DKBEXTRACT_PACKAGE_VERSION="$PACKAGE_VERSION"
+
+      - name: Build
+        run: cmake --build build --parallel --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Download Linux deployment tools
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          mkdir -p build/tools
+          curl --fail --location --output build/tools/linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl --fail --location --output build/tools/linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          curl --fail --location --output build/tools/appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x build/tools/*.AppImage
+
+      - name: Build Linux packages
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          LINUXDEPLOY: ${{ github.workspace }}/build/tools/linuxdeploy-x86_64.AppImage
+          APPIMAGETOOL: ${{ github.workspace }}/build/tools/appimagetool-x86_64.AppImage
+        run: packaging/linux/build-packages.sh build build/packages "$PACKAGE_VERSION"
+
+      - name: Validate Linux packages
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          appimage="build/packages/kbextract-${PACKAGE_VERSION}-linux-x86_64.AppImage"
+          deb="build/packages/kbextract-${PACKAGE_VERSION}-linux-x86_64.deb"
+          test -x "$appimage"
+          test -f "$deb"
+          test -f build/linux-package/kbextract.AppDir/usr/plugins/sqldrivers/libqsqlite.so
+          test -f build/linux-package/kbextract.AppDir/usr/plugins/imageformats/libqsvg.so
+          test -d build/linux-package/kbextract.AppDir/usr/qml/QtQuick
+
+          appimage_status=0
+          timeout 5s env APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen \
+            QT_QPA_PLATFORMTHEME= QT_QUICK_BACKEND=software "$appimage" || appimage_status=$?
+          if [[ "$appimage_status" -ne 124 ]]; then
+            echo "AppImage smoke test exited with status $appimage_status" >&2
+            exit 1
+          fi
+
+          mkdir -p build/deb-smoke
+          dpkg-deb --extract "$deb" build/deb-smoke
+          deb_status=0
+          timeout 5s env QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= \
+            QT_QUICK_BACKEND=software build/deb-smoke/usr/bin/kbextract || deb_status=$?
+          if [[ "$deb_status" -ne 124 ]]; then
+            echo "DEB smoke test exited with status $deb_status" >&2
+            exit 1
+          fi
+
+      - name: Build macOS DMG
+        if: startsWith(matrix.platform, 'macos')
+        run: cpack --config build/CPackConfig.cmake -C Release -B build/packages
+
+      - name: Build Windows installer
+        if: matrix.platform == 'windows'
+        run: cpack --config build/CPackConfig.cmake -C Release -B build/packages
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: kbextract-${{ env.PACKAGE_VERSION }}-${{ matrix.platform }}
+          path: build/packages/*
+          if-no-files-found: error

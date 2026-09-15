@@ -1,8 +1,8 @@
 # kbextract
 
-A small Linux desktop application for browsing and copying highlights and
-notes from Kobo eReaders. It reads Kobo databases without modifying them and
-produces standard Markdown, Obsidian-compatible Markdown, or plain text.
+A small cross-platform desktop application for browsing and copying highlights
+and notes from Kobo eReaders. It reads Kobo databases without modifying them
+and produces standard Markdown, Obsidian-compatible Markdown, or plain text.
 
 ![kbextract displaying Kobo highlights as Markdown](screenshot.png)
 
@@ -20,44 +20,55 @@ read-only annotation extraction, Markdown formatting, and clipboard export.
 
 ## Requirements
 
-- A Linux desktop
+- Linux, macOS, or Windows
 - Qt 6.9 or later with QML, Quick, Quick Controls 2, SQLite, and SVG support
 - CMake 3.21 or later
 - A C++20 compiler
 
+Official packages use Qt 6.9.3. Linux builds use GCC, macOS builds use Clang,
+and Windows builds use MSVC 2022.
+
 ## Build and run
 
 ```bash
-make build
-make run
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+./build/kbextract
 ```
 
-Install the executable and desktop entry under `~/.local` with:
+On Linux, `make build`, `make run`, and installation under `~/.local` are
+available as shortcuts:
 
 ```bash
 make install
 ```
 
+On multi-configuration generators, pass `--config Release` when building,
+testing, installing, or packaging.
+
 ## Appearance
 
-The app defaults to Omarchy mode and follows the active palette from
-`~/.local/state/omarchy/current/theme/colors.toml`. Palette changes are picked
-up while the app is running across backgrounds, controls, text, borders,
-selection, and accents. The interface also follows Omarchy's caption, body,
-and heading sizes from the active theme's `shell.toml`, with
-`~/.config/omarchy/shell.toml` applied as the user override. Changes made with
-`omarchy display text size` are picked up while the app is running. The
-Markdown document keeps its own reading sizes. When Omarchy state is
-unavailable, the app uses built-in palette and typography defaults.
+The app defaults to System mode and follows the operating system's palette,
+accent, light/dark preference, UI font, fixed-width font, and base text size.
+Changes are applied while the app is running. Use the header button to cycle
+between System, Light, and Dark modes. On Omarchy systems a fourth Omarchy mode
+is offered and follows `~/.local/state/omarchy/current/theme/colors.toml`, the
+active theme's `shell.toml`, and `~/.config/omarchy/shell.toml` overrides.
 
-Use the button in the header to cycle between Omarchy, light, and dark modes.
-The selected mode is saved across launches.
+The selected mode is saved with Qt's platform settings backend. A saved
+Omarchy selection falls back to System if Omarchy is not available.
 
 ## Kobo devices
 
-On startup, the app looks for mounted volumes containing
-`.kobo/KoboReader.sqlite`. Use `REFRESH` after connecting a device, or
-`BROWSE...` to choose a database manually.
+The app checks mounted volumes every two seconds for
+`.kobo/KoboReader.sqlite`. Connected devices appear automatically; disconnected
+databases are closed and restored if the same mount returns. `REFRESH` forces a
+database reload, while `BROWSE...` selects a database manually.
+
+Linux sandbox packages need removable-media access to locations such as
+`/media` and `/run/media`. macOS may request removable-volume access. Windows
+Kobos are discovered through their drive-letter volume. The native file dialog
+is available as a fallback on every platform.
 
 Databases are opened with SQLite's read-only mode. The sidebar lists only books
 with visible highlights or notes and shows separate counts for each. A passage
@@ -95,6 +106,33 @@ adapts to narrower windows without changing the copied source.
 ```bash
 ctest --test-dir build --output-on-failure
 ```
+
+CI runs the suite on Linux x86-64, Windows x64, and both Apple Silicon and
+Intel macOS runners.
+
+## Packages
+
+Linux packaging requires `linuxdeploy`, `linuxdeploy-plugin-qt`, and
+`appimagetool`; keep the plugin executable beside `linuxdeploy`, and ensure the
+Qt 6.9.3 `qmake` is on `PATH`. Build a self-contained AppImage and DEB with:
+
+```bash
+LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage \
+APPIMAGETOOL=/path/to/appimagetool-x86_64.AppImage \
+packaging/linux/build-packages.sh build build/packages 0.1.0
+```
+
+On macOS, CPack produces a deployed DMG. On Windows, install NSIS and CPack
+produces an installer:
+
+```bash
+cpack --config build/CPackConfig.cmake -C Release -B build/packages
+```
+
+The `Packages` GitHub Actions workflow performs these builds for semantic
+version tags such as `v0.1.0`, or manually with an explicit version. Produced
+artifacts are unsigned; signing, Apple notarization, and store publication are
+not part of this repository yet.
 
 ## License
 

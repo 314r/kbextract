@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -144,6 +145,9 @@ private slots:
     void rejectsMissingDatabase();
     void reportsMalformedSchema();
     void deduplicatesManualDatabase();
+    void detectsMountedDeviceArrivalWithoutResettingSelection();
+    void closesAndRestoresRemovedDevice();
+    void hidesUnreadableManualDatabase();
 };
 
 void KoboLibraryTest::loadsAnnotatedBooks()
@@ -364,6 +368,77 @@ void KoboLibraryTest::deduplicatesManualDatabase()
     QVERIFY(library.addDatabase(databasePath));
     QVERIFY(library.addDatabase(databasePath));
     QCOMPARE(devicePathOccurrences(library.devices(), databasePath), 1);
+}
+
+void KoboLibraryTest::detectsMountedDeviceArrivalWithoutResettingSelection()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountPath = directory.filePath(QStringLiteral("KOBOeReader"));
+    const QString databasePath = QDir(mountPath).filePath(QStringLiteral(".kobo/KoboReader.sqlite"));
+    QVERIFY(QDir().mkpath(QFileInfo(databasePath).path()));
+    QVERIFY(createDatabase(databasePath));
+
+    QList<KoboVolume> volumes;
+    KoboLibrary library([&volumes] { return volumes; }, 20);
+    library.refreshDevices();
+    QCOMPARE(library.devices().size(), 0);
+
+    volumes.append(KoboVolume{mountPath, QStringLiteral("Kobo Reader")});
+    QTRY_COMPARE_WITH_TIMEOUT(library.devices().size(), 1, 500);
+    QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+
+    library.setCurrentBookIndex(0);
+    const QString selectedMarkdown = library.currentBookMarkdown();
+    QVERIFY(!selectedMarkdown.isEmpty());
+    QSignalSpy currentBookChangedSpy(&library, &KoboLibrary::currentBookChanged);
+
+    QTest::qWait(70);
+    QCOMPARE(currentBookChangedSpy.count(), 0);
+    QCOMPARE(library.currentBookIndex(), 0);
+    QCOMPARE(library.currentBookMarkdown(), selectedMarkdown);
+}
+
+void KoboLibraryTest::closesAndRestoresRemovedDevice()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountPath = directory.filePath(QStringLiteral("KOBOeReader"));
+    const QString databasePath = QDir(mountPath).filePath(QStringLiteral(".kobo/KoboReader.sqlite"));
+    QVERIFY(QDir().mkpath(QFileInfo(databasePath).path()));
+    QVERIFY(createDatabase(databasePath));
+
+    QList<KoboVolume> volumes{{mountPath, QStringLiteral("Kobo Reader")}};
+    KoboLibrary library([&volumes] { return volumes; }, 20);
+    library.refreshDevices();
+    QCOMPARE(library.currentDeviceIndex(), 0);
+    QCOMPARE(library.books().size(), 4);
+
+    volumes.clear();
+    QTRY_COMPARE_WITH_TIMEOUT(library.currentDeviceIndex(), -1, 500);
+    QVERIFY(library.books().isEmpty());
+    QVERIFY(library.statusText().contains(QStringLiteral("no longer connected")));
+
+    volumes.append(KoboVolume{mountPath, QStringLiteral("Kobo Reader")});
+    QTRY_COMPARE_WITH_TIMEOUT(library.currentDeviceIndex(), 0, 500);
+    QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+}
+
+void KoboLibraryTest::hidesUnreadableManualDatabase()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
+    QVERIFY(createDatabase(databasePath));
+
+    KoboLibrary library([] { return QList<KoboVolume>(); }, 20);
+    QVERIFY(library.addDatabase(databasePath));
+    QCOMPARE(library.devices().size(), 1);
+
+    library.setCurrentDeviceIndex(-1);
+    QVERIFY(QFile::remove(databasePath));
+    QTRY_COMPARE_WITH_TIMEOUT(library.devices().size(), 0, 500);
+    QCOMPARE(library.currentDeviceIndex(), -1);
 }
 
 QTEST_GUILESS_MAIN(KoboLibraryTest)

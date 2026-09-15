@@ -113,12 +113,39 @@ QString noteParagraph(const QString &text)
     return normalizedText(text);
 }
 
+QList<KoboVolume> mountedKoboVolumes()
+{
+    QList<KoboVolume> volumes;
+    const QList<QStorageInfo> mountedVolumes = QStorageInfo::mountedVolumes();
+    for (const QStorageInfo &storage : mountedVolumes) {
+        if (!storage.isValid() || !storage.isReady())
+            continue;
+
+        volumes.append(KoboVolume{
+            .rootPath = storage.rootPath(),
+            .displayName = storage.displayName(),
+        });
+    }
+    return volumes;
+}
+
 } // namespace
 
 KoboLibrary::KoboLibrary(QObject *parent)
+    : KoboLibrary(mountedKoboVolumes, 2000, parent)
+{
+}
+
+KoboLibrary::KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, QObject *parent)
     : QObject(parent)
+    , m_volumeProvider(std::move(volumeProvider))
     , m_connectionName(QStringLiteral("kbextract-kobo-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
 {
+    connect(&m_deviceRefreshTimer, &QTimer::timeout, this, [this] {
+        rebuildDevices();
+    });
+    m_deviceRefreshTimer.setInterval(qMax(1, refreshIntervalMs));
+    m_deviceRefreshTimer.start();
 }
 
 KoboLibrary::~KoboLibrary()
@@ -183,24 +210,24 @@ QString KoboLibrary::statusText() const
 
 void KoboLibrary::setCurrentDeviceIndex(int index)
 {
+    m_pendingDatabasePath.clear();
+
     if (index < 0 || index >= m_devices.size()) {
-        const bool indexChanged = m_currentDeviceIndex != -1;
-        m_currentDeviceIndex = -1;
-        m_currentLoadSucceeded = false;
-        closeDatabase();
-        setBooks({});
-        setStatusText(tr("Connect a Kobo or choose KoboReader.sqlite."));
-        if (indexChanged)
-            emit currentDeviceIndexChanged();
+        clearDeviceSelection(tr("Connect a Kobo or choose KoboReader.sqlite."));
         return;
     }
 
+    const QString oldPath = m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
+        ? deviceDatabasePath(m_devices.at(m_currentDeviceIndex).toMap())
+        : QString();
+    const QString newPath = deviceDatabasePath(m_devices.at(index).toMap());
     const bool indexChanged = m_currentDeviceIndex != index;
     m_currentDeviceIndex = index;
     if (indexChanged)
         emit currentDeviceIndexChanged();
 
-    loadCurrentDatabase();
+    if (normalizedDatabasePath(oldPath) != normalizedDatabasePath(newPath) || !m_database.isOpen())
+        loadCurrentDatabase();
 }
 
 void KoboLibrary::setCurrentBookIndex(int index)
@@ -450,8 +477,10 @@ void KoboLibrary::refreshDevices()
     QString preferredPath;
     if (m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size())
         preferredPath = deviceDatabasePath(m_devices.at(m_currentDeviceIndex).toMap());
+    else
+        preferredPath = m_pendingDatabasePath;
 
-    rebuildDevices(preferredPath);
+    rebuildDevices(preferredPath, true);
 }
 
 bool KoboLibrary::addDatabase(const QString &databasePath)
@@ -481,11 +510,11 @@ bool KoboLibrary::addDatabase(const QString &databasePath)
     if (!isAlreadyManual)
         m_manualDevices.append(manualDevice(normalizedPath));
 
-    rebuildDevices(normalizedPath);
+    rebuildDevices(normalizedPath, true);
     return m_currentLoadSucceeded;
 }
 
-void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath)
+QVariantList KoboLibrary::discoveredDevices() const
 {
     QVariantList devices;
     QSet<QString> seenPaths;
@@ -498,18 +527,15 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath)
         devices.append(device);
     };
 
-    const QList<QStorageInfo> mountedVolumes = QStorageInfo::mountedVolumes();
-    for (const QStorageInfo &storage : mountedVolumes) {
-        if (!storage.isValid() || !storage.isReady())
-            continue;
-
-        const QString mountPath = QDir::cleanPath(storage.rootPath());
+    const QList<KoboVolume> mountedVolumes = m_volumeProvider ? m_volumeProvider() : QList<KoboVolume>();
+    for (const KoboVolume &storage : mountedVolumes) {
+        const QString mountPath = QDir::cleanPath(storage.rootPath);
         const QString databasePath = normalizedDatabasePath(QDir(mountPath).filePath(QString::fromLatin1(databaseRelativePath)));
         const QFileInfo databaseInfo(databasePath);
         if (!databaseInfo.exists() || !databaseInfo.isFile() || !databaseInfo.isReadable())
             continue;
 
-        QString displayName = storage.displayName().trimmed();
+        QString displayName = storage.displayName.trimmed();
         if (displayName.isEmpty())
             displayName = QFileInfo(mountPath).fileName();
         if (displayName.isEmpty())
@@ -523,26 +549,95 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath)
         });
     }
 
-    for (const QVariant &deviceValue : std::as_const(m_manualDevices))
-        appendDevice(deviceValue.toMap());
+    std::sort(devices.begin(), devices.end(), [](const QVariant &left, const QVariant &right) {
+        const QVariantMap leftDevice = left.toMap();
+        const QVariantMap rightDevice = right.toMap();
+        const int nameOrder = QString::localeAwareCompare(
+            leftDevice.value(QStringLiteral("displayName")).toString(),
+            rightDevice.value(QStringLiteral("displayName")).toString());
+        if (nameOrder != 0)
+            return nameOrder < 0;
+        return deviceDatabasePath(leftDevice) < deviceDatabasePath(rightDevice);
+    });
 
-    m_devices = std::move(devices);
+    for (const QVariant &deviceValue : std::as_const(m_manualDevices)) {
+        const QVariantMap device = deviceValue.toMap();
+        const QFileInfo databaseInfo(deviceDatabasePath(device));
+        if (databaseInfo.exists() && databaseInfo.isFile() && databaseInfo.isReadable())
+            appendDevice(device);
+    }
+
+    return devices;
+}
+
+void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forceReload)
+{
+    const QString oldPath = m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
+        ? normalizedDatabasePath(deviceDatabasePath(m_devices.at(m_currentDeviceIndex).toMap()))
+        : QString();
+    const QString requestedPath = normalizedDatabasePath(preferredDatabasePath);
+    const QVariantList devices = discoveredDevices();
+
+    if (devices == m_devices) {
+        if (forceReload && m_currentDeviceIndex >= 0)
+            loadCurrentDatabase();
+        else if (forceReload && m_currentDeviceIndex < 0 && m_pendingDatabasePath.isEmpty())
+            setStatusText(tr("Connect a Kobo or choose KoboReader.sqlite."));
+        return;
+    }
+
+    m_devices = devices;
     emit devicesChanged();
 
-    const QString normalizedPreferredPath = normalizedDatabasePath(preferredDatabasePath);
+    QString targetPath = requestedPath;
+    if (targetPath.isEmpty() && !m_pendingDatabasePath.isEmpty())
+        targetPath = normalizedDatabasePath(m_pendingDatabasePath);
+    if (targetPath.isEmpty())
+        targetPath = oldPath;
+
     int selectedIndex = -1;
-    if (!normalizedPreferredPath.isEmpty()) {
+    if (!targetPath.isEmpty()) {
         for (int index = 0; index < m_devices.size(); ++index) {
-            if (normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())) == normalizedPreferredPath) {
+            if (normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())) == targetPath) {
                 selectedIndex = index;
                 break;
             }
         }
     }
-    if (selectedIndex < 0 && !m_devices.isEmpty())
+
+    if (selectedIndex < 0 && oldPath.isEmpty() && m_pendingDatabasePath.isEmpty() && !m_devices.isEmpty())
         selectedIndex = 0;
 
-    setCurrentDeviceIndex(selectedIndex);
+    if (selectedIndex < 0) {
+        if (!oldPath.isEmpty())
+            m_pendingDatabasePath = oldPath;
+        clearDeviceSelection(tr("The selected Kobo is no longer connected."));
+        return;
+    }
+
+    const QString selectedPath = normalizedDatabasePath(deviceDatabasePath(m_devices.at(selectedIndex).toMap()));
+    if (selectedPath == normalizedDatabasePath(m_pendingDatabasePath))
+        m_pendingDatabasePath.clear();
+
+    const bool indexChanged = m_currentDeviceIndex != selectedIndex;
+    m_currentDeviceIndex = selectedIndex;
+    if (indexChanged)
+        emit currentDeviceIndexChanged();
+
+    if (forceReload || oldPath != selectedPath || !m_database.isOpen())
+        loadCurrentDatabase();
+}
+
+void KoboLibrary::clearDeviceSelection(const QString &statusText)
+{
+    const bool indexChanged = m_currentDeviceIndex != -1;
+    m_currentDeviceIndex = -1;
+    m_currentLoadSucceeded = false;
+    closeDatabase();
+    setBooks({});
+    setStatusText(statusText);
+    if (indexChanged)
+        emit currentDeviceIndexChanged();
 }
 
 bool KoboLibrary::loadCurrentDatabase()

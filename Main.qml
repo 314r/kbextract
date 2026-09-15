@@ -21,6 +21,53 @@ ApplicationWindow {
         Theme.omarchyDark = omarchyTheme.dark
         Theme.omarchyPalette = omarchyTheme.palette
         Theme.omarchyFontSizes = omarchyTheme.fontSizes
+        Theme.omarchyAvailable = omarchyTheme.available
+    }
+
+    function applySystemAppearance() {
+        Theme.systemDark = systemAppearance.dark
+        Theme.systemPalette = systemAppearance.palette
+        Theme.systemFontSizes = systemAppearance.fontSizes
+        Theme.systemUiFont = systemAppearance.uiFont.family
+        Theme.systemMonoFont = systemAppearance.fixedFont.family
+    }
+
+    function availableThemeModes() {
+        const modes = ["system", "light", "dark"]
+        if (omarchyTheme.available)
+            modes.push("omarchy")
+        return modes
+    }
+
+    function normalizedThemeMode(candidate) {
+        return availableThemeModes().indexOf(candidate) >= 0 ? candidate : "system"
+    }
+
+    function cycleThemeMode() {
+        const modes = availableThemeModes()
+        const currentIndex = Math.max(0, modes.indexOf(Theme.mode))
+        Theme.mode = modes[(currentIndex + 1) % modes.length]
+        appearanceSettings.colorMode = Theme.mode
+    }
+
+    function themeModeLabel() {
+        if (Theme.mode === "light")
+            return qsTr("LIGHT")
+        if (Theme.mode === "dark")
+            return qsTr("DARK")
+        if (Theme.mode === "omarchy")
+            return qsTr("OMARCHY")
+        return qsTr("SYSTEM")
+    }
+
+    function themeModeIcon() {
+        if (Theme.mode === "light")
+            return "assets/icons/theme-light.svg"
+        if (Theme.mode === "dark")
+            return "assets/icons/theme-dark.svg"
+        if (Theme.mode === "omarchy")
+            return "assets/icons/theme-omarchy.svg"
+        return "assets/icons/theme-system.svg"
     }
 
     component ToolButton: Button {
@@ -72,14 +119,28 @@ ApplicationWindow {
 
     OmarchyTheme {
         id: omarchyTheme
+        active: Theme.mode === "omarchy" && available
         onPaletteChanged: window.applyOmarchyTheme()
         onFontSizesChanged: window.applyOmarchyTheme()
+        onAvailableChanged: {
+            window.applyOmarchyTheme()
+            if (!available && Theme.mode === "omarchy") {
+                Theme.mode = "system"
+                appearanceSettings.colorMode = Theme.mode
+            }
+        }
+    }
+
+    SystemAppearance {
+        id: systemAppearance
+        onPaletteChanged: window.applySystemAppearance()
+        onFontsChanged: window.applySystemAppearance()
     }
 
     Settings {
         id: appearanceSettings
         category: "Appearance"
-        property string colorMode: "omarchy"
+        property string colorMode: "system"
     }
 
     FileDialog {
@@ -95,8 +156,11 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        Theme.mode = appearanceSettings.colorMode
+        applySystemAppearance()
         applyOmarchyTheme()
+        Theme.mode = normalizedThemeMode(appearanceSettings.colorMode)
+        if (Theme.mode !== appearanceSettings.colorMode)
+            appearanceSettings.colorMode = Theme.mode
         koboLibrary.refreshDevices()
     }
 
@@ -126,14 +190,10 @@ ApplicationWindow {
                 implicitHeight: 30
                 Layout.preferredWidth: implicitWidth
                 Layout.preferredHeight: implicitHeight
-                text: Theme.mode === "omarchy" ? qsTr("OMARCHY") : (Theme.mode === "light" ? qsTr("LIGHT") : qsTr("DARK"))
+                text: window.themeModeLabel()
                 display: AbstractButton.IconOnly
                 hoverEnabled: true
-                icon.source: Theme.mode === "omarchy"
-                    ? "assets/icons/theme-omarchy.svg"
-                    : (Theme.mode === "light"
-                        ? "assets/icons/theme-light.svg"
-                        : "assets/icons/theme-dark.svg")
+                icon.source: window.themeModeIcon()
                 icon.width: 18
                 icon.height: 18
                 icon.color: Theme.text
@@ -150,10 +210,7 @@ ApplicationWindow {
                     border.color: modeButton.activeFocus ? Theme.accent : Theme.line
                 }
 
-                onClicked: {
-                    Theme.mode = Theme.mode === "omarchy" ? "light" : (Theme.mode === "light" ? "dark" : "omarchy")
-                    appearanceSettings.colorMode = Theme.mode
-                }
+                onClicked: window.cycleThemeMode()
             }
         }
     }
@@ -579,7 +636,7 @@ ApplicationWindow {
                             selectedTextColor: Theme.accentText
                             selectionColor: Theme.accent
                             font.family: Theme.monoFont
-                            font.pixelSize: 15
+                            font.pixelSize: Theme.fontSizeReader
                             leftPadding: responsiveHorizontalPadding
                             rightPadding: responsiveHorizontalPadding
                             topPadding: 28
@@ -601,7 +658,7 @@ ApplicationWindow {
 
                             MarkdownHighlighter {
                                 textDocument: annotationText.textDocument
-                                headingPixelSize: 20
+                                headingPixelSize: Theme.fontSizeReaderHeading
                             }
 
                             background: Rectangle {

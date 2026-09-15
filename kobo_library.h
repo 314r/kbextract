@@ -1,10 +1,21 @@
 #pragma once
 
+#include <functional>
+
+#include <QList>
 #include <QObject>
 #include <QSqlDatabase>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
+
+struct KoboVolume {
+    QString rootPath;
+    QString displayName;
+};
+
+using KoboVolumeProvider = std::function<QList<KoboVolume>()>;
 
 class KoboLibrary : public QObject
 {
@@ -23,6 +34,7 @@ class KoboLibrary : public QObject
 
 public:
     explicit KoboLibrary(QObject *parent = nullptr);
+    KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, QObject *parent = nullptr);
     ~KoboLibrary() override;
 
     QVariantList devices() const;
@@ -51,7 +63,9 @@ signals:
     void statusTextChanged();
 
 private:
-    void rebuildDevices(const QString &preferredDatabasePath = {});
+    void rebuildDevices(const QString &preferredDatabasePath = {}, bool forceReload = false);
+    QVariantList discoveredDevices() const;
+    void clearDeviceSelection(const QString &statusText);
     bool loadCurrentDatabase();
     void closeDatabase();
     void setBooks(QVariantList books);
@@ -65,6 +79,9 @@ private:
 
     QVariantList m_devices;
     QVariantList m_manualDevices;
+    KoboVolumeProvider m_volumeProvider;
+    QTimer m_deviceRefreshTimer;
+    QString m_pendingDatabasePath;
     QVariantList m_books;
     int m_currentDeviceIndex = -1;
     int m_currentBookIndex = -1;

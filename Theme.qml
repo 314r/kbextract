@@ -3,8 +3,39 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    property string mode: "omarchy"
+    property string mode: "system"
+    property bool systemDark: false
     property bool omarchyDark: true
+    property bool omarchyAvailable: false
+
+    property var systemPalette: ({
+        "background": "#f2f2f3",
+        "dark_background": "#ececed",
+        "darker_background": "#f7f7f8",
+        "lighter_background": "#f8f8f8",
+        "foreground": "#25272a",
+        "dark_foreground": "#989ba0",
+        "light_foreground": "#6e7277",
+        "bright_foreground": "#25272a",
+        "muted": "#c9cace",
+        "accent": "#5980a6",
+        "accent_text": "#ffffff",
+        "selection": "#dce7f0",
+        "red": "#a24d4d",
+        "green": "#3f7652",
+        "yellow": "#8b671f",
+        "cyan": "#3d7089"
+    })
+    property var systemFontSizes: ({
+        "caption": 10,
+        "body": 12,
+        "heading": 16,
+        "reader": 15,
+        "readerHeading": 20
+    })
+    property string systemUiFont: "sans-serif"
+    property string systemMonoFont: "monospace"
+
     property var omarchyPalette: ({
         "background": "#030203",
         "dark_background": "#080708",
@@ -28,35 +59,44 @@ QtObject {
         "heading": 16
     })
 
-    readonly property bool omarchyMode: mode === "omarchy"
-    readonly property bool darkMode: mode === "dark" || (omarchyMode && omarchyDark)
-    readonly property color canvas: omarchyMode ? omarchyPalette.background : (darkMode ? "#141414" : "#f2f2f3")
-    readonly property color canvasGlass: omarchyMode ? omarchyPalette.darker_background : (darkMode ? "#1a1a1a" : "#f7f7f8")
-    readonly property color panel: omarchyMode ? omarchyPalette.dark_background : (darkMode ? "#1c1c1c" : "#ececed")
-    readonly property color surface: omarchyMode ? omarchyPalette.lighter_background : (darkMode ? "#242424" : "#f8f8f8")
-    readonly property color surfaceHover: omarchyMode ? omarchyPalette.selection : (darkMode ? "#2b2b2b" : "#e7edf2")
-    readonly property color surfaceSelected: omarchyMode ? omarchyPalette.selection : (darkMode ? "#1d2a35" : "#dce7f0")
-    readonly property color line: omarchyMode ? omarchyPalette.muted : (darkMode ? "#303030" : "#c9cace")
-    readonly property color lineStrong: omarchyMode ? omarchyPalette.dark_foreground : (darkMode ? "#484848" : "#92969c")
-    readonly property color text: omarchyMode ? omarchyPalette.foreground : (darkMode ? "#ededed" : "#25272a")
-    readonly property color textMuted: omarchyMode ? omarchyPalette.light_foreground : (darkMode ? "#ababab" : "#6e7277")
-    readonly property color textFaint: omarchyMode ? omarchyPalette.dark_foreground : (darkMode ? "#767676" : "#989ba0")
-    readonly property color accent: omarchyMode ? omarchyPalette.accent : (darkMode ? "#6da3d8" : "#5980a6")
-    readonly property color accentSoft: omarchyMode ? omarchyPalette.selection : (darkMode ? "#1d2a35" : "#d6e2ed")
-    readonly property color mint: omarchyMode ? omarchyPalette.green : (darkMode ? "#7bbf92" : "#5980a6")
-    readonly property color cyan: omarchyMode ? omarchyPalette.cyan : (darkMode ? "#9fc7db" : "#5980a6")
-    readonly property color warning: omarchyMode ? omarchyPalette.yellow : (darkMode ? "#c5a570" : "#a67928")
-    readonly property color danger: omarchyMode ? omarchyPalette.red : (darkMode ? "#de7979" : "#a24d4d")
-    readonly property color accentText: omarchyMode ? omarchyPalette.background : (darkMode ? "#101010" : "#ffffff")
-    readonly property color previewOverlay: omarchyMode ? omarchyPalette.selection : (darkMode ? "#66303a45" : "#665980a6")
-    readonly property color previewControl: omarchyMode ? omarchyPalette.dark_background : (darkMode ? "#bb111111" : "#337ca1be")
-    readonly property color previewControlBorder: omarchyMode ? omarchyPalette.bright_foreground : (darkMode ? "#b3d3e5" : "#b3d2e6")
-    readonly property color previewText: omarchyMode ? omarchyPalette.foreground : (darkMode ? text : "#ffffff")
-    readonly property string uiFont: "sans-serif"
-    readonly property string monoFont: "monospace"
-    readonly property int fontSizeCaption: omarchyFontSizes.caption
-    readonly property int fontSizeBody: omarchyFontSizes.body
-    readonly property int fontSizeHeading: omarchyFontSizes.heading
+    readonly property string effectiveMode: mode === "omarchy" && !omarchyAvailable ? "system" : mode
+    readonly property bool systemMode: effectiveMode === "system"
+    readonly property bool omarchyMode: effectiveMode === "omarchy"
+    readonly property bool darkMode: effectiveMode === "dark"
+        || (systemMode && systemDark)
+        || (omarchyMode && omarchyDark)
+    readonly property var activePalette: systemMode ? systemPalette : omarchyPalette
+
+    readonly property color canvas: systemMode ? activePalette.background : (omarchyMode ? activePalette.background : (darkMode ? "#141414" : "#f2f2f3"))
+    readonly property color canvasGlass: systemMode ? activePalette.darker_background : (omarchyMode ? activePalette.darker_background : (darkMode ? "#1a1a1a" : "#f7f7f8"))
+    readonly property color panel: systemMode ? activePalette.dark_background : (omarchyMode ? activePalette.dark_background : (darkMode ? "#1c1c1c" : "#ececed"))
+    readonly property color surface: systemMode ? activePalette.lighter_background : (omarchyMode ? activePalette.lighter_background : (darkMode ? "#242424" : "#f8f8f8"))
+    readonly property color surfaceHover: systemMode ? activePalette.selection : (omarchyMode ? activePalette.selection : (darkMode ? "#2b2b2b" : "#e7edf2"))
+    readonly property color surfaceSelected: systemMode ? activePalette.selection : (omarchyMode ? activePalette.selection : (darkMode ? "#1d2a35" : "#dce7f0"))
+    readonly property color line: systemMode ? activePalette.muted : (omarchyMode ? activePalette.muted : (darkMode ? "#303030" : "#c9cace"))
+    readonly property color lineStrong: systemMode ? activePalette.dark_foreground : (omarchyMode ? activePalette.dark_foreground : (darkMode ? "#484848" : "#92969c"))
+    readonly property color text: systemMode ? activePalette.foreground : (omarchyMode ? activePalette.foreground : (darkMode ? "#ededed" : "#25272a"))
+    readonly property color textMuted: systemMode ? activePalette.light_foreground : (omarchyMode ? activePalette.light_foreground : (darkMode ? "#ababab" : "#6e7277"))
+    readonly property color textFaint: systemMode ? activePalette.dark_foreground : (omarchyMode ? activePalette.dark_foreground : (darkMode ? "#767676" : "#989ba0"))
+    readonly property color accent: systemMode ? activePalette.accent : (omarchyMode ? activePalette.accent : (darkMode ? "#6da3d8" : "#5980a6"))
+    readonly property color accentSoft: systemMode ? activePalette.selection : (omarchyMode ? activePalette.selection : (darkMode ? "#1d2a35" : "#d6e2ed"))
+    readonly property color mint: systemMode ? activePalette.green : (omarchyMode ? activePalette.green : (darkMode ? "#7bbf92" : "#5980a6"))
+    readonly property color cyan: systemMode ? activePalette.cyan : (omarchyMode ? activePalette.cyan : (darkMode ? "#9fc7db" : "#5980a6"))
+    readonly property color warning: systemMode ? activePalette.yellow : (omarchyMode ? activePalette.yellow : (darkMode ? "#c5a570" : "#a67928"))
+    readonly property color danger: systemMode ? activePalette.red : (omarchyMode ? activePalette.red : (darkMode ? "#de7979" : "#a24d4d"))
+    readonly property color accentText: systemMode ? activePalette.accent_text : (omarchyMode ? activePalette.background : (darkMode ? "#101010" : "#ffffff"))
+    readonly property color previewOverlay: omarchyMode ? activePalette.selection : (darkMode ? "#66303a45" : "#665980a6")
+    readonly property color previewControl: omarchyMode ? activePalette.dark_background : (darkMode ? "#bb111111" : "#337ca1be")
+    readonly property color previewControlBorder: omarchyMode ? activePalette.bright_foreground : (darkMode ? "#b3d3e5" : "#b3d2e6")
+    readonly property color previewText: omarchyMode ? activePalette.foreground : (darkMode ? text : "#ffffff")
+
+    readonly property string uiFont: systemUiFont
+    readonly property string monoFont: systemMonoFont
+    readonly property int fontSizeCaption: omarchyMode ? omarchyFontSizes.caption : systemFontSizes.caption
+    readonly property int fontSizeBody: omarchyMode ? omarchyFontSizes.body : systemFontSizes.body
+    readonly property int fontSizeHeading: omarchyMode ? omarchyFontSizes.heading : systemFontSizes.heading
+    readonly property int fontSizeReader: omarchyMode ? Math.max(1, Math.round(omarchyFontSizes.body * 1.25)) : systemFontSizes.reader
+    readonly property int fontSizeReaderHeading: omarchyMode ? Math.max(1, Math.round(omarchyFontSizes.body * 1.667)) : systemFontSizes.readerHeading
     readonly property int radius: 0
     readonly property int smallRadius: 0
 }

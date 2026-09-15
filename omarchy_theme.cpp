@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QTextStream>
 
@@ -173,7 +174,6 @@ OmarchyTheme::OmarchyTheme(const QString &stateRoot, const QString &userShellPat
     connect(&m_refreshTimer, &QTimer::timeout, this, &OmarchyTheme::reload);
     m_refreshTimer.setInterval(1500);
     reload();
-    m_refreshTimer.start();
 }
 
 QVariantMap OmarchyTheme::palette() const
@@ -196,6 +196,31 @@ QString OmarchyTheme::name() const
     return m_name;
 }
 
+bool OmarchyTheme::available() const
+{
+    return m_available;
+}
+
+bool OmarchyTheme::active() const
+{
+    return m_active;
+}
+
+void OmarchyTheme::setActive(bool active)
+{
+    if (m_active == active)
+        return;
+
+    m_active = active;
+    if (m_active) {
+        reload();
+        m_refreshTimer.start();
+    } else {
+        m_refreshTimer.stop();
+    }
+    emit activeChanged();
+}
+
 void OmarchyTheme::reload()
 {
     QVariantMap palette = fallbackPalette();
@@ -204,7 +229,9 @@ void OmarchyTheme::reload()
         m_userShellPath);
     QString mode = QStringLiteral("dark");
 
-    QFile file(QDir(m_stateRoot).filePath(QStringLiteral("theme/colors.toml")));
+    const QString colorsPath = QDir(m_stateRoot).filePath(QStringLiteral("theme/colors.toml"));
+    QFile file(colorsPath);
+    const bool available = QFileInfo(colorsPath).isReadable();
     if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream stream(&file);
         while (!stream.atEnd()) {
@@ -239,11 +266,13 @@ void OmarchyTheme::reload()
     const bool paletteDidChange = m_palette != palette || m_dark != dark;
     const bool fontSizesDidChange = m_fontSizes != fontSizes;
     const bool nameDidChange = m_name != name;
+    const bool availabilityDidChange = m_available != available;
 
     m_palette = std::move(palette);
     m_fontSizes = fontSizes;
     m_dark = dark;
     m_name = name;
+    m_available = available;
 
     if (paletteDidChange)
         emit paletteChanged();
@@ -251,4 +280,6 @@ void OmarchyTheme::reload()
         emit fontSizesChanged();
     if (nameDidChange)
         emit nameChanged();
+    if (availabilityDidChange)
+        emit availableChanged();
 }
