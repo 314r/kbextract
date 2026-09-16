@@ -27,6 +27,7 @@ qt_standard_project_setup(REQUIRES 6.9)
 
 qt_add_executable(kbextract
     main.cpp
+    file_url.h
     clipboard_helper.cpp
     clipboard_helper.h
     kobo_library.cpp
@@ -41,14 +42,22 @@ qt_add_executable(kbextract
 
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+set(KBEXTRACT_PLATFORM_QML)
+if(APPLE)
+    list(APPEND KBEXTRACT_PLATFORM_QML MacMain.qml MacCopyButton.qml)
+endif()
+
 qt_add_qml_module(kbextract
     URI Kbextract
     VERSION 1.0
     QML_FILES
+        AppSession.qml
+        AnnotationBody.qml
         AppearanceSettingsPage.qml
         Main.qml
         SettingsWindow.qml
         Theme.qml
+        ${KBEXTRACT_PLATFORM_QML}
     RESOURCES
         assets/icons/theme-dark.svg
         assets/icons/theme-light.svg
@@ -209,6 +218,7 @@ if(BUILD_TESTING)
 
     qt_add_executable(appearance_ui_tests
         tests/appearance_ui_test.cpp
+        file_url.h
         clipboard_helper.cpp clipboard_helper.h
         kobo_library.cpp kobo_library.h
         markdown_highlighter.cpp markdown_highlighter.h
@@ -224,6 +234,7 @@ if(BUILD_TESTING)
         PREFIX "/qt/qml/Kbextract"
         FILES
             Main.qml SettingsWindow.qml AppearanceSettingsPage.qml Theme.qml
+            AppSession.qml AnnotationBody.qml
             assets/icons/theme-system.svg assets/icons/theme-light.svg
             assets/icons/theme-dark.svg assets/icons/theme-omarchy.svg
     )
@@ -233,6 +244,29 @@ if(BUILD_TESTING)
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=${scale}"
         )
     endforeach()
+
+    if(APPLE)
+        qt_add_executable(mac_ui_tests
+            tests/mac_ui_test.cpp
+            file_url.h
+            clipboard_helper.cpp clipboard_helper.h
+            kobo_library.cpp kobo_library.h
+            markdown_highlighter.cpp markdown_highlighter.h
+            system_appearance.cpp system_appearance.h
+        )
+        target_include_directories(mac_ui_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(mac_ui_tests PRIVATE
+            Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Sql Qt6::Test
+        )
+        qt_add_resources(mac_ui_tests "mac_ui"
+            PREFIX "/qt/qml/Kbextract"
+            FILES MacMain.qml MacCopyButton.qml AppSession.qml AnnotationBody.qml Theme.qml
+        )
+        add_test(NAME mac_ui_tests COMMAND mac_ui_tests)
+        set_tests_properties(mac_ui_tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software"
+        )
+    endif()
 
     qt_add_executable(clipboard_helper_tests
         tests/clipboard_helper_test.cpp

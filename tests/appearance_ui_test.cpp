@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "clipboard_helper.h"
+#include "file_url.h"
 #include "kobo_library.h"
 #include "markdown_highlighter.h"
 #include "omarchy_theme.h"
@@ -80,10 +81,15 @@ private:
 void AppearanceUiTest::initTestCase()
 {
     qmlRegisterType<ClipboardHelper>("Kbextract", 1, 0, "ClipboardHelper");
+    qmlRegisterType<FileUrl>("Kbextract", 1, 0, "FileUrl");
     qmlRegisterType<EmptyLibrary>("Kbextract", 1, 0, "KoboLibrary");
     qmlRegisterType<MarkdownHighlighter>("Kbextract", 1, 0, "MarkdownHighlighter");
     qmlRegisterType<IsolatedTheme>("Kbextract", 1, 0, "OmarchyTheme");
     qmlRegisterType<SystemAppearance>("Kbextract", 1, 0, "SystemAppearance");
+    qmlRegisterType(QUrl(QStringLiteral("qrc:/qt/qml/Kbextract/AppSession.qml")),
+                    "Kbextract", 1, 0, "AppSession");
+    qmlRegisterType(QUrl(QStringLiteral("qrc:/qt/qml/Kbextract/AnnotationBody.qml")),
+                    "Kbextract", 1, 0, "AnnotationBody");
     qmlRegisterType(QUrl(QStringLiteral("qrc:/qt/qml/Kbextract/SettingsWindow.qml")),
                     "Kbextract", 1, 0, "SettingsWindow");
     qmlRegisterType(QUrl(QStringLiteral("qrc:/qt/qml/Kbextract/AppearanceSettingsPage.qml")),
@@ -121,7 +127,8 @@ void AppearanceUiTest::init()
     m_settings->show();
     QTest::qWait(30);
     for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
-                             "deviceSelector", "appearanceButton", "themeSelector", "modeButton"}) {
+                             "deviceSelector", "appearanceButton", "themeSelector", "modeButton",
+                             "sidebar", "mainColumn", "copyFooter"}) {
         QVERIFY2(control(name), name);
     }
 }
@@ -225,6 +232,18 @@ void AppearanceUiTest::desktopFontChangesKeepCompactSizes()
 
 void AppearanceUiTest::controlsFitTextAndConfirmation()
 {
+    auto *sidebar = control("sidebar");
+    auto *mainColumn = control("mainColumn");
+    auto *footer = control("copyFooter");
+    const QRectF sidebarBounds(sidebar->mapToScene(QPointF()), sidebar->size());
+    const QRectF mainBounds(mainColumn->mapToScene(QPointF()), mainColumn->size());
+    const QRectF footerBounds(footer->mapToScene(QPointF()), footer->size());
+    QCOMPARE(sidebarBounds.bottom(), mainBounds.bottom());
+    QCOMPARE(footerBounds.left(), mainBounds.left());
+    QCOMPARE(footerBounds.right(), mainBounds.right());
+    QCOMPARE(footerBounds.bottom(), mainBounds.bottom());
+    QCOMPARE(footerBounds.left(), sidebarBounds.right());
+
     for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
                              "deviceSelector", "appearanceButton", "themeSelector"}) {
         auto *item = control(name);
@@ -239,6 +258,8 @@ void AppearanceUiTest::controlsFitTextAndConfirmation()
     }
     for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton"}) {
         auto *button = control(name);
+        const QRectF bounds(button->mapToItem(footer, QPointF()), button->size());
+        QVERIFY(QRectF(QPointF(), footer->size()).contains(bounds));
         const QSizeF originalSize = button->size();
         button->setProperty("copyConfirmed", true);
         QCoreApplication::processEvents();

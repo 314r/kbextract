@@ -48,29 +48,40 @@ testing, installing, or packaging.
 
 ## Appearance
 
-The app defaults to System mode and follows the operating system's palette,
-accent, light/dark preference, UI font family, and fixed-width font family.
-Changes are applied while the app is running. Use the theme icon in the header
+On macOS, the app uses Qt's macOS-style controls, system UI fonts, native menus,
+and native file dialogs. It always follows the system's light/dark appearance
+and accent, including changes while running. There is no Mac theme picker or
+Settings window. Previously saved theme preferences are retained but ignored.
+The sidebar is resizable from 246 to 420 logical pixels and remembers its width.
+
+On Linux and Windows, the app retains its custom controls and defaults to System
+mode, following the operating system's palette, accent, light/dark preference,
+UI font family, and fixed-width font family. Use the theme icon in the header
 to open Settings, then choose System, Light, or Dark under Appearance. On
-Omarchy systems a fourth Omarchy mode is offered and follows
-`~/.local/state/omarchy/current/theme/colors.toml`.
+Omarchy systems a fourth Omarchy mode follows
+`~/.local/state/omarchy/current/theme/colors.toml`. A saved Omarchy selection
+falls back to System if Omarchy is unavailable.
 
-Text uses the same compact scale in every theme and on every desktop: 12 logical
-pixels for UI text, 10 for captions, 16 for UI headings, 15 for reader text, and
-20 for reader headings. Qt applies the display's scaling, including Retina.
-Desktop font-size settings and Omarchy shell font overrides do not change these
-sizes. Buttons and selectors use consistent padding and grow to fit their text.
-The app retains its custom control design on macOS and uses native file dialogs.
+The custom Linux/Windows interface retains its compact text scale: 12 logical
+pixels for UI text, 10 for captions, and 16 for UI headings. Its sizes remain
+constant across color themes and desktop font-size settings. Both presentations
+use 15 logical pixels for reader text and 20 for reader headings. Qt applies
+display scaling, including Retina.
 
-The selected mode is saved with Qt's platform settings backend. A saved
-Omarchy selection falls back to System if Omarchy is not available.
+On macOS, File → Open Database… (`⌘O`) opens a database, Refresh Devices (`⌘R`)
+reloads devices, and Close Window (`⌘W`) exits the app. Closing the red window
+button also exits; `⌘Q` remains available in the application menu. In the reader,
+Edit → Copy (`⌘C`) copies selected text and Select All (`⌘A`) selects the document.
+The reader also has a native context menu. Edit → Copy All As and the three footer
+buttons export the complete document in the chosen format.
 
 ## Kobo devices
 
 The app checks mounted volumes every two seconds for
 `.kobo/KoboReader.sqlite`. Connected devices appear automatically; disconnected
-databases are closed and restored if the same mount returns. `REFRESH` forces a
-database reload, while `BROWSE...` selects a database manually.
+databases are closed and restored if the same mount returns. Refresh forces a
+database reload; Browse (Linux/Windows) or Open…
+(macOS) selects a database manually.
 
 Linux sandbox packages need removable-media access to locations such as
 `/media` and `/run/media`. macOS may request removable-volume access. Windows
@@ -100,10 +111,10 @@ The source can still be selected and copied with keyboard shortcuts.
 
 The footer provides three complete-document copy formats:
 
-- `COPY TEXT` copies plain text suitable for a word processor.
-- `COPY OBS MD` copies Markdown with highlights formatted as Obsidian quote
+- Copy text (`COPY TEXT` on Linux/Windows) copies plain text suitable for a word processor.
+- Copy Obsidian Markdown (`COPY OBS MD` on Linux/Windows) copies Markdown with highlights formatted as Obsidian quote
   callouts.
-- `COPY MD` copies standard Markdown with blockquoted highlights.
+- Copy Markdown (`COPY MD` on Linux/Windows) copies standard Markdown with blockquoted highlights.
 
 The reader soft-wraps at a centered maximum of 120 monospaced characters and
 adapts to narrower windows without changing the copied source.
@@ -115,7 +126,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 CI runs the suite on Linux x86-64, Windows x64, and both Apple Silicon and
-Intel macOS runners.
+Intel macOS runners. Mac UI tests use isolated database fixtures and settings;
+the custom UI regression tests continue to run on all platforms. Native menus,
+file dialogs, VoiceOver, and live system appearance changes also require an
+interactive Mac check; offscreen tests do not verify their native rendering.
 
 ## Packages
 

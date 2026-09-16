@@ -25,13 +25,6 @@ ApplicationWindow {
         Theme.omarchyAvailable = omarchyTheme.available
     }
 
-    function applySystemAppearance() {
-        Theme.systemDark = systemAppearance.dark
-        Theme.systemPalette = systemAppearance.palette
-        Theme.systemUiFont = systemAppearance.uiFont.family
-        Theme.systemMonoFont = systemAppearance.fixedFont.family
-    }
-
     function availableThemeModes() {
         const modes = ["system", "light", "dark"]
         if (omarchyTheme.available)
@@ -127,13 +120,8 @@ ApplicationWindow {
         color: Theme.line
     }
 
-    KoboLibrary {
-        id: koboLibrary
-    }
-
-    ClipboardHelper {
-        id: clipboardHelper
-    }
+    AppSession { id: session }
+    readonly property var koboLibrary: session.library
 
     OmarchyTheme {
         id: omarchyTheme
@@ -144,12 +132,6 @@ ApplicationWindow {
             if (!available && Theme.mode === "omarchy")
                 window.setThemeMode("system")
         }
-    }
-
-    SystemAppearance {
-        id: systemAppearance
-        onPaletteChanged: window.applySystemAppearance()
-        onFontsChanged: window.applySystemAppearance()
     }
 
     Settings {
@@ -179,14 +161,12 @@ ApplicationWindow {
             qsTr("SQLite databases (*.sqlite *.db)"),
             qsTr("All files (*)")
         ]
-        onAccepted: koboLibrary.addDatabase(selectedFile.toLocalFile())
+        onAccepted: session.openDatabase(selectedFile)
     }
 
     Component.onCompleted: {
-        applySystemAppearance()
         applyOmarchyTheme()
         setThemeMode(appearanceSettings.colorMode)
-        koboLibrary.refreshDevices()
     }
 
     onClosing: settingsWindow.close()
@@ -251,6 +231,7 @@ ApplicationWindow {
 
         Rectangle {
             id: sourcePanel
+            objectName: "sidebar"
 
             Layout.preferredWidth: window.width >= 1220 ? 290 : 246
             Layout.minimumWidth: 246
@@ -366,7 +347,7 @@ ApplicationWindow {
                     }
 
                     onActivated: function(index) {
-                        koboLibrary.currentDeviceIndex = index
+                        session.selectDevice(index)
                     }
                 }
 
@@ -379,7 +360,7 @@ ApplicationWindow {
                         Layout.preferredHeight: implicitHeight
                         text: qsTr("REFRESH")
                         fill: "transparent"
-                        onClicked: koboLibrary.refreshDevices()
+                        onClicked: session.refresh()
                     }
 
                     ToolButton {
@@ -514,7 +495,7 @@ ApplicationWindow {
                                 }
                             }
 
-                            onClicked: koboLibrary.currentBookIndex = index
+                            onClicked: session.selectBook(index)
                         }
 
                         ScrollBar.vertical: ScrollBar {
@@ -562,6 +543,8 @@ ApplicationWindow {
         }
 
         Rectangle {
+            id: mainColumn
+            objectName: "mainColumn"
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: Theme.canvas
@@ -650,58 +633,10 @@ ApplicationWindow {
                             }
                         }
 
-                        TextArea {
+                        AnnotationBody {
                             id: annotationText
-
-                            readonly property int wrapColumn: 120
-                            readonly property real minimumHorizontalPadding: 32
-                            readonly property real wrapWidth: annotationFontMetrics.advanceWidth("M".repeat(wrapColumn))
-                            readonly property real responsiveHorizontalPadding: Math.max(
-                                minimumHorizontalPadding,
-                                (width - wrapWidth) / 2
-                            )
-
                             width: annotationScroll.availableWidth
-                            height: implicitHeight
-                            text: koboLibrary.currentBookMarkdown
-                            textFormat: TextEdit.PlainText
-                            readOnly: true
-                            ContextMenu.menu: null
-                            selectByMouse: true
-                            persistentSelection: true
-                            wrapMode: TextEdit.WrapAtWordBoundaryOrAnywhere
-                            color: Theme.text
-                            selectedTextColor: Theme.accentText
-                            selectionColor: Theme.accent
-                            font.family: Theme.monoFont
-                            font.pixelSize: Theme.fontSizeReader
-                            leftPadding: responsiveHorizontalPadding
-                            rightPadding: responsiveHorizontalPadding
-                            topPadding: 28
-                            bottomPadding: 28
-
-                            onTextChanged: {
-                                copyTextFeedbackTimer.stop()
-                                copyObsidianFeedbackTimer.stop()
-                                copyAllFeedbackTimer.stop()
-                                copyTextButton.copyConfirmed = false
-                                copyObsidianButton.copyConfirmed = false
-                                copyAllButton.copyConfirmed = false
-                            }
-
-                            FontMetrics {
-                                id: annotationFontMetrics
-                                font: annotationText.font
-                            }
-
-                            MarkdownHighlighter {
-                                textDocument: annotationText.textDocument
-                                headingPixelSize: Theme.fontSizeReaderHeading
-                            }
-
-                            background: Rectangle {
-                                color: "transparent"
-                            }
+                            markdown: koboLibrary.currentBookMarkdown
                         }
 
                         ScrollBar.vertical: ScrollBar {
@@ -758,102 +693,68 @@ ApplicationWindow {
                         wrapMode: Text.WordWrap
                     }
                 }
-            }
-        }
-    }
+                Rectangle {
+                    id: copyFooter
+                    objectName: "copyFooter"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.max(48, copyButtons.implicitHeight + 18)
+                    color: Theme.panel
 
-    footer: Rectangle {
-        implicitHeight: Math.max(48, copyButtons.implicitHeight + 18)
-        color: Theme.panel
+                    SeparatorLine {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 1
+                    }
 
-        SeparatorLine {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 1
-        }
+                    Row {
+                        id: copyButtons
+                        anchors.right: parent.right
+                        anchors.rightMargin: 24
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
 
-        Row {
-            id: copyButtons
-            anchors.right: parent.right
-            anchors.rightMargin: 24
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 8
+                        ToolButton {
+                            id: copyTextButton
+                            objectName: "copyTextButton"
 
-            ToolButton {
-                id: copyTextButton
-                objectName: "copyTextButton"
+                            property bool copyConfirmed: session.textCopied
 
-                property bool copyConfirmed: false
+                            text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY TEXT")
+                            alternateText: copyConfirmed ? qsTr("COPY TEXT") : qsTr("COPIED")
+                            enabled: koboLibrary.currentBookPlainText.length > 0
 
-                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY TEXT")
-                alternateText: copyConfirmed ? qsTr("COPY TEXT") : qsTr("COPIED")
-                enabled: koboLibrary.currentBookPlainText.length > 0
+                            onClicked: session.copy("text")
+                        }
 
-                onClicked: {
-                    if (clipboardHelper.copyText(koboLibrary.currentBookPlainText)) {
-                        copyConfirmed = true
-                        copyTextFeedbackTimer.restart()
+                        ToolButton {
+                            id: copyObsidianButton
+                            objectName: "copyObsidianButton"
+
+                            property bool copyConfirmed: session.obsidianCopied
+
+                            text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY OBS MD")
+                            alternateText: copyConfirmed ? qsTr("COPY OBS MD") : qsTr("COPIED")
+                            enabled: koboLibrary.currentBookObsidianMarkdown.length > 0
+
+                            onClicked: session.copy("obsidian")
+                        }
+
+                        ToolButton {
+                            id: copyAllButton
+                            objectName: "copyAllButton"
+
+                            property bool copyConfirmed: session.markdownCopied
+
+                            text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY MD")
+                            alternateText: copyConfirmed ? qsTr("COPY MD") : qsTr("COPIED")
+                            enabled: koboLibrary.currentBookMarkdown.length > 0
+
+                            onClicked: session.copy("markdown")
+                        }
                     }
                 }
             }
-
-            ToolButton {
-                id: copyObsidianButton
-                objectName: "copyObsidianButton"
-
-                property bool copyConfirmed: false
-
-                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY OBS MD")
-                alternateText: copyConfirmed ? qsTr("COPY OBS MD") : qsTr("COPIED")
-                enabled: koboLibrary.currentBookObsidianMarkdown.length > 0
-
-                onClicked: {
-                    if (clipboardHelper.copyText(koboLibrary.currentBookObsidianMarkdown)) {
-                        copyConfirmed = true
-                        copyObsidianFeedbackTimer.restart()
-                    }
-                }
-            }
-
-            ToolButton {
-                id: copyAllButton
-                objectName: "copyAllButton"
-
-                property bool copyConfirmed: false
-
-                text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY MD")
-                alternateText: copyConfirmed ? qsTr("COPY MD") : qsTr("COPIED")
-                enabled: koboLibrary.currentBookMarkdown.length > 0
-
-                onClicked: {
-                    if (clipboardHelper.copyText(koboLibrary.currentBookMarkdown)) {
-                        copyConfirmed = true
-                        copyAllFeedbackTimer.restart()
-                    }
-                }
-            }
-        }
-
-        Timer {
-            id: copyTextFeedbackTimer
-
-            interval: 1500
-            onTriggered: copyTextButton.copyConfirmed = false
-        }
-
-        Timer {
-            id: copyObsidianFeedbackTimer
-
-            interval: 1500
-            onTriggered: copyObsidianButton.copyConfirmed = false
-        }
-
-        Timer {
-            id: copyAllFeedbackTimer
-
-            interval: 1500
-            onTriggered: copyAllButton.copyConfirmed = false
         }
     }
 }
