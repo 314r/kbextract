@@ -17,7 +17,7 @@ ApplicationWindow {
     title: qsTr("kbextract")
     color: Theme.canvas
     font.family: Theme.uiFont
-    font.pixelSize: Theme.fontSizeBody
+    font.pointSize: Theme.fontPointSizeBody
 
     function applyOmarchyTheme() {
         Theme.omarchyDark = omarchyTheme.dark
@@ -41,6 +41,25 @@ ApplicationWindow {
         Theme.mode = normalizedMode
         if (appearanceSettings.colorMode !== normalizedMode)
             appearanceSettings.colorMode = normalizedMode
+    }
+
+    function normalizedTextScalePercent(candidate) {
+        const rounded = Math.round(Number(candidate) / 10) * 10
+        return Math.max(80, Math.min(200, isFinite(rounded) ? rounded : 100))
+    }
+
+    function setTextScalePercent(candidate) {
+        const normalized = normalizedTextScalePercent(candidate)
+        Theme.textScalePercent = normalized
+        if (appearanceSettings.textScalePercent !== normalized) {
+            appearanceSettings.textScalePercent = normalized
+            appearanceSettings.setValue("textScalePercent", normalized)
+            appearanceSettings.sync()
+        }
+    }
+
+    function adjustTextScalePercent(delta) {
+        setTextScalePercent(Theme.effectiveTextScalePercent + delta)
     }
 
     function openSettings() {
@@ -78,27 +97,37 @@ ApplicationWindow {
 
         horizontalPadding: Theme.controlHorizontalPadding
         verticalPadding: Theme.controlVerticalPadding
-        implicitWidth: Math.ceil(Math.max(contentItem.implicitWidth, alternateLabelMetrics.advanceWidth))
-            + leftPadding + rightPadding
+        implicitWidth: Math.ceil(contentItem.implicitWidth) + leftPadding + rightPadding
         implicitHeight: Math.max(Theme.controlMinHeight,
             Math.ceil(contentItem.implicitHeight) + topPadding + bottomPadding)
+        height: implicitHeight
         font.family: Theme.monoFont
-        font.pixelSize: Theme.fontSizeBody
+        font.pointSize: Theme.fontPointSizeBody
         font.weight: Font.Medium
 
-        TextMetrics {
-            id: alternateLabelMetrics
-            font: control.font
-            text: control.alternateText
-        }
+        contentItem: Item {
+            implicitWidth: Math.max(label.implicitWidth, alternateLabel.implicitWidth)
+            implicitHeight: Math.max(label.implicitHeight, alternateLabel.implicitHeight)
 
-        contentItem: Text {
-            text: control.text
-            color: control.ink
-            font: control.font
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
+            Text {
+                id: label
+
+                anchors.fill: parent
+                text: control.text
+                color: control.ink
+                font: control.font
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+
+            Text {
+                id: alternateLabel
+
+                visible: false
+                text: control.alternateText
+                font: control.font
+            }
         }
 
         background: Rectangle {
@@ -111,7 +140,7 @@ ApplicationWindow {
     component SectionLabel: Text {
         color: Theme.text
         font.family: Theme.monoFont
-        font.pixelSize: Theme.fontSizeCaption
+        font.pointSize: Theme.fontPointSizeCaption
         font.weight: Font.DemiBold
         font.letterSpacing: 1.1
     }
@@ -120,7 +149,10 @@ ApplicationWindow {
         color: Theme.line
     }
 
-    AppSession { id: session }
+    AppSession {
+        id: session
+        adaptiveTypography: true
+    }
     readonly property var koboLibrary: session.library
 
     OmarchyTheme {
@@ -138,6 +170,7 @@ ApplicationWindow {
         id: appearanceSettings
         category: "Appearance"
         property string colorMode: "system"
+        property int textScalePercent: 100
     }
 
     SettingsWindow {
@@ -146,10 +179,29 @@ ApplicationWindow {
         transientParent: window
         currentThemeMode: Theme.mode
         availableThemeModes: window.availableThemeModes()
+        currentTextScalePercent: Theme.effectiveTextScalePercent
 
         onThemeModeSelected: function(mode) {
             window.setThemeMode(mode)
         }
+        onTextScalePercentSelected: function(percent) {
+            window.setTextScalePercent(percent)
+        }
+    }
+
+    Shortcut {
+        sequences: [StandardKey.ZoomIn, "Ctrl+="]
+        onActivated: window.adjustTextScalePercent(10)
+    }
+
+    Shortcut {
+        sequences: [StandardKey.ZoomOut]
+        onActivated: window.adjustTextScalePercent(-10)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+0"
+        onActivated: window.setTextScalePercent(100)
     }
 
     FileDialog {
@@ -167,6 +219,7 @@ ApplicationWindow {
     Component.onCompleted: {
         applyOmarchyTheme()
         setThemeMode(appearanceSettings.colorMode)
+        setTextScalePercent(appearanceSettings.textScalePercent)
     }
 
     onClosing: settingsWindow.close()
@@ -212,7 +265,7 @@ ApplicationWindow {
                 ToolTip.delay: 500
                 ToolTip.text: qsTr("Settings — Theme: %1").arg(text)
                 ToolTip.toolTip.font.family: Theme.uiFont
-                ToolTip.toolTip.font.pixelSize: Theme.fontSizeBody
+                ToolTip.toolTip.font.pointSize: Theme.fontPointSizeBody
 
                 background: Rectangle {
                     color: modeButton.down || modeButton.hovered ? Theme.surfaceHover : "transparent"
@@ -261,10 +314,10 @@ ApplicationWindow {
                     objectName: "deviceSelector"
 
                     Layout.fillWidth: true
-                    Layout.preferredHeight: implicitHeight
                     implicitHeight: Math.max(Theme.controlMinHeight,
                         Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
                         + topPadding + bottomPadding)
+                    height: implicitHeight
                     leftPadding: Theme.controlHorizontalPadding
                     rightPadding: Theme.controlHorizontalPadding + indicator.implicitWidth + spacing
                     verticalPadding: Theme.controlVerticalPadding
@@ -273,7 +326,7 @@ ApplicationWindow {
                     currentIndex: koboLibrary.currentDeviceIndex
                     enabled: count > 0
                     font.family: Theme.uiFont
-                    font.pixelSize: Theme.fontSizeBody
+                    font.pointSize: Theme.fontPointSizeBody
 
                     delegate: ItemDelegate {
                         required property int index
@@ -287,7 +340,7 @@ ApplicationWindow {
                         text: modelData.displayName
                         highlighted: deviceSelector.highlightedIndex === index
                         font.family: Theme.uiFont
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pointSize: Theme.fontPointSizeBody
 
                         contentItem: Text {
                             text: parent.text
@@ -316,7 +369,7 @@ ApplicationWindow {
                         text: qsTr("v")
                         color: deviceSelector.enabled ? Theme.textMuted : Theme.textFaint
                         font.family: Theme.monoFont
-                        font.pixelSize: Theme.fontSizeCaption
+                        font.pointSize: Theme.fontPointSizeCaption
                     }
 
                     background: Rectangle {
@@ -390,7 +443,7 @@ ApplicationWindow {
                         text: koboLibrary.books.length
                         color: Theme.textFaint
                         font.family: Theme.monoFont
-                        font.pixelSize: Theme.fontSizeCaption
+                        font.pointSize: Theme.fontPointSizeCaption
                     }
                 }
 
@@ -444,7 +497,7 @@ ApplicationWindow {
                                         text: bookRow.modelData.title
                                         color: Theme.text
                                         font.family: Theme.uiFont
-                                        font.pixelSize: Theme.fontSizeBody
+                                        font.pointSize: Theme.fontPointSizeBody
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
@@ -455,7 +508,7 @@ ApplicationWindow {
                                         text: bookRow.modelData.author
                                         color: Theme.textMuted
                                         font.family: Theme.uiFont
-                                        font.pixelSize: Theme.fontSizeBody
+                                        font.pointSize: Theme.fontPointSizeBody
                                         elide: Text.ElideRight
                                     }
 
@@ -468,7 +521,7 @@ ApplicationWindow {
                                             .arg(bookRow.modelData.noteCount === 1 ? "" : "s")
                                         color: Theme.textFaint
                                         font.family: Theme.monoFont
-                                        font.pixelSize: Theme.fontSizeCaption
+                                        font.pointSize: Theme.fontPointSizeCaption
                                         elide: Text.ElideRight
                                     }
                                 }
@@ -534,7 +587,7 @@ ApplicationWindow {
                         text: koboLibrary.statusText
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pointSize: Theme.fontPointSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }
@@ -583,7 +636,7 @@ ApplicationWindow {
                             text: koboLibrary.currentBookTitle
                             color: Theme.text
                             font.family: Theme.uiFont
-                            font.pixelSize: Theme.fontSizeHeading
+                            font.pointSize: Theme.fontPointSizeHeading
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                         }
@@ -594,7 +647,7 @@ ApplicationWindow {
                             text: koboLibrary.currentBookAuthor
                             color: Theme.textMuted
                             font.family: Theme.uiFont
-                            font.pixelSize: Theme.fontSizeBody
+                            font.pointSize: Theme.fontPointSizeBody
                             elide: Text.ElideRight
                         }
                     }
@@ -675,7 +728,7 @@ ApplicationWindow {
                         text: qsTr("Select a book to view its highlights and notes.")
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pointSize: Theme.fontPointSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }
@@ -688,7 +741,7 @@ ApplicationWindow {
                         text: koboLibrary.annotationStatusText
                         color: Theme.textFaint
                         font.family: Theme.uiFont
-                        font.pixelSize: Theme.fontSizeBody
+                        font.pointSize: Theme.fontPointSizeBody
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
                     }
@@ -697,7 +750,11 @@ ApplicationWindow {
                     id: copyFooter
                     objectName: "copyFooter"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.max(48, copyButtons.implicitHeight + 18)
+                    Layout.preferredHeight: Math.max(48,
+                        copyTextButton.height + 18,
+                        copyObsidianButton.height + 18,
+                        copyAllButton.height + 18)
+                    Layout.minimumHeight: Layout.preferredHeight
                     color: Theme.panel
 
                     SeparatorLine {
@@ -707,16 +764,24 @@ ApplicationWindow {
                         height: 1
                     }
 
-                    Row {
+                    Item {
                         id: copyButtons
+                        width: copyTextButton.width + copyObsidianButton.width
+                            + copyAllButton.width + spacing * 2
+                        height: Math.max(copyTextButton.height,
+                            copyObsidianButton.height, copyAllButton.height)
+                        readonly property real spacing: 8
                         anchors.right: parent.right
                         anchors.rightMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
 
                         ToolButton {
                             id: copyTextButton
                             objectName: "copyTextButton"
+
+                            anchors.right: copyObsidianButton.left
+                            anchors.rightMargin: copyButtons.spacing
+                            anchors.verticalCenter: parent.verticalCenter
 
                             property bool copyConfirmed: session.textCopied
 
@@ -731,6 +796,10 @@ ApplicationWindow {
                             id: copyObsidianButton
                             objectName: "copyObsidianButton"
 
+                            anchors.right: copyAllButton.left
+                            anchors.rightMargin: copyButtons.spacing
+                            anchors.verticalCenter: parent.verticalCenter
+
                             property bool copyConfirmed: session.obsidianCopied
 
                             text: copyConfirmed ? qsTr("COPIED") : qsTr("COPY OBS MD")
@@ -743,6 +812,9 @@ ApplicationWindow {
                         ToolButton {
                             id: copyAllButton
                             objectName: "copyAllButton"
+
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
 
                             property bool copyConfirmed: session.markdownCopied
 

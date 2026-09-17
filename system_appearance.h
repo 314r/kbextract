@@ -12,6 +12,7 @@ class SystemAppearance : public QObject
     Q_PROPERTY(QVariantMap palette READ palette NOTIFY paletteChanged)
     Q_PROPERTY(QFont uiFont READ uiFont NOTIFY fontsChanged)
     Q_PROPERTY(QFont fixedFont READ fixedFont NOTIFY fontsChanged)
+    Q_PROPERTY(qreal uiFontPointSize READ uiFontPointSize NOTIFY fontsChanged)
     Q_PROPERTY(bool dark READ dark NOTIFY paletteChanged)
 
 public:
@@ -20,6 +21,7 @@ public:
     QVariantMap palette() const;
     QFont uiFont() const;
     QFont fixedFont() const;
+    qreal uiFontPointSize() const;
     bool dark() const;
 
     static QVariantMap paletteFrom(const QPalette &palette, bool dark);

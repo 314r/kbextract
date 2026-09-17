@@ -14,6 +14,7 @@ class MarkdownHighlighterTest : public QObject
 
 private slots:
     void stylesOnlyLevelTwoHeadings();
+    void stylesAdaptivePointSize();
 };
 
 void MarkdownHighlighterTest::stylesOnlyLevelTwoHeadings()
@@ -47,6 +48,22 @@ void MarkdownHighlighterTest::stylesOnlyLevelTwoHeadings()
     }
 
     QCOMPARE(document.toPlainText(), markdown);
+}
+
+void MarkdownHighlighterTest::stylesAdaptivePointSize()
+{
+    QTextDocument document;
+    MarkdownHighlighter highlighter;
+    highlighter.setHeadingPointSize(25.0);
+    highlighter.setDocument(&document);
+    document.setPlainText(QStringLiteral("## Adaptive heading\nBody"));
+    highlighter.rehighlight();
+
+    const QList<QTextLayout::FormatRange> formats = document.firstBlock().layout()->formats();
+    QCOMPARE(formats.size(), 1);
+    QCOMPARE(formats.constFirst().format.property(QTextFormat::FontPointSize).toReal(), 25.0);
+    QVERIFY(!formats.constFirst().format.hasProperty(QTextFormat::FontPixelSize));
+    QVERIFY(document.firstBlock().next().layout()->formats().isEmpty());
 }
 
 QTEST_GUILESS_MAIN(MarkdownHighlighterTest)

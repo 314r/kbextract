@@ -27,7 +27,8 @@ TextArea {
     selectedTextColor: Theme.accentText
     selectionColor: Theme.accent
     font.family: Theme.monoFont
-    font.pixelSize: Theme.fontSizeReader
+    font.pointSize: Theme.adaptiveTypography ? Theme.fontPointSizeReader : -1
+    font.pixelSize: Theme.adaptiveTypography ? -1 : Theme.fontSizeReader
     leftPadding: responsiveHorizontalPadding
     rightPadding: responsiveHorizontalPadding
     topPadding: 28
@@ -42,6 +43,7 @@ TextArea {
     MarkdownHighlighter {
         textDocument: body.textDocument
         headingPixelSize: Theme.fontSizeReaderHeading
+        headingPointSize: Theme.adaptiveTypography ? Theme.fontPointSizeReaderHeading : -1
     }
 
     background: Rectangle { color: "transparent" }

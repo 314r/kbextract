@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFont>
+#include <QFontInfo>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -61,12 +62,15 @@ private slots:
     void init();
     void cleanup();
     void themeChangesPreserveTypographyAndGeometry();
-    void desktopFontChangesKeepCompactSizes();
+    void desktopFontChangesUpdateTypography();
+    void textScalePersistsAndClamps();
     void controlsFitTextAndConfirmation();
-    void dropdownRowsUseCompactFonts();
+    void readerUsesCurrentScaleAndWraps();
+    void dropdownRowsUseCurrentFontSize();
 
 private:
-    QList<int> fontSizes() const;
+    bool loadUi();
+    QList<qreal> fontPointSizes() const;
     QList<QRectF> geometry() const;
     QQuickItem *control(const char *name) const;
 
@@ -109,28 +113,39 @@ void AppearanceUiTest::init()
     QCOMPARE(colors.write(palette), palette.size());
     colors.close();
     m_warnings.clear();
+    QVERIFY2(loadUi(), qPrintable(m_warnings.join('\n')));
+    for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
+                             "deviceSelector", "appearanceButton", "themeSelector", "modeButton",
+                             "textSizeDecreaseButton", "textSizeResetButton", "textSizeIncreaseButton",
+                             "annotationText", "sidebar", "mainColumn", "copyFooter"}) {
+        QVERIFY2(control(name), name);
+    }
+}
+
+bool AppearanceUiTest::loadUi()
+{
     m_engine = std::make_unique<QQmlApplicationEngine>();
     connect(m_engine.get(), &QQmlEngine::warnings, this, [this](const QList<QQmlError> &errors) {
         for (const auto &error : errors)
             m_warnings.append(error.toString());
     });
     m_engine->load(QUrl(QStringLiteral("qrc:/qt/qml/Kbextract/Main.qml")));
-    QVERIFY2(!m_engine->rootObjects().isEmpty(), qPrintable(m_warnings.join('\n')));
+    if (m_engine->rootObjects().isEmpty())
+        return false;
     m_window = qobject_cast<QQuickWindow *>(m_engine->rootObjects().constFirst());
-    QVERIFY(m_window);
+    if (!m_window)
+        return false;
     m_settings = m_window->findChild<QQuickWindow *>(QStringLiteral("settingsWindow"));
-    QVERIFY(m_settings);
+    if (!m_settings)
+        return false;
     m_theme = m_engine->singletonInstance<QObject *>("Kbextract", "Theme");
-    QVERIFY(m_theme);
+    if (!m_theme)
+        return false;
     m_window->resize(1040, 680);
     m_settings->resize(600, 400);
     m_settings->show();
     QTest::qWait(30);
-    for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
-                             "deviceSelector", "appearanceButton", "themeSelector", "modeButton",
-                             "sidebar", "mainColumn", "copyFooter"}) {
-        QVERIFY2(control(name), name);
-    }
+    return true;
 }
 
 void AppearanceUiTest::cleanup()
@@ -148,12 +163,12 @@ QQuickItem *AppearanceUiTest::control(const char *name) const
     return m_window->findChild<QQuickItem *>(QString::fromLatin1(name));
 }
 
-QList<int> AppearanceUiTest::fontSizes() const
+QList<qreal> AppearanceUiTest::fontPointSizes() const
 {
-    QList<int> sizes;
-    for (const auto *name : {"fontSizeCaption", "fontSizeBody", "fontSizeHeading",
-                             "fontSizeReader", "fontSizeReaderHeading"}) {
-        sizes.append(m_theme->property(name).toInt());
+    QList<qreal> sizes;
+    for (const auto *name : {"fontPointSizeCaption", "fontPointSizeBody", "fontPointSizeHeading",
+                             "fontPointSizeReader", "fontPointSizeReaderHeading"}) {
+        sizes.append(m_theme->property(name).toReal());
     }
     return sizes;
 }
@@ -171,16 +186,21 @@ QList<QRectF> AppearanceUiTest::geometry() const
 
 void AppearanceUiTest::themeChangesPreserveTypographyAndGeometry()
 {
-    const QList<int> expectedSizes{10, 12, 16, 15, 20};
+    QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, 140)));
+    QCoreApplication::processEvents();
+    const QList<qreal> expectedSizes = fontPointSizes();
     const auto originalGeometry = geometry();
     QVERIFY(m_theme->property("omarchyAvailable").toBool());
     for (const auto *mode : {"system", "light", "dark", "omarchy", "system"}) {
         m_theme->setProperty("mode", QString::fromLatin1(mode));
-        QTest::qWait(10);
-        QCOMPARE(fontSizes(), expectedSizes);
+        QTest::qWait(100);
+        QCOMPARE(fontPointSizes(), expectedSizes);
+        QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 140);
         QCOMPARE(geometry(), originalGeometry);
-        for (const auto *name : {"copyTextButton", "deviceSelector", "appearanceButton", "themeSelector"})
-            QCOMPARE(control(name)->property("font").value<QFont>().pixelSize(), 12);
+        for (const auto *name : {"copyTextButton", "deviceSelector", "appearanceButton", "themeSelector"}) {
+            QCOMPARE(control(name)->property("font").value<QFont>().pointSizeF(),
+                     m_theme->property("fontPointSizeBody").toReal());
+        }
 
         // Optional artifacts from the same windows exercised by the tests.
         const QString artifactDir = qEnvironmentVariable("KBEXTRACT_UI_ARTIFACT_DIR");
@@ -199,92 +219,221 @@ void AppearanceUiTest::themeChangesPreserveTypographyAndGeometry()
     QCOMPARE(m_theme->property("mode").toString(), QStringLiteral("system"));
     QCOMPARE(m_theme->property("effectiveMode").toString(), QStringLiteral("system"));
     QCoreApplication::processEvents();
-    QCOMPARE(fontSizes(), expectedSizes);
+    QCOMPARE(fontPointSizes(), expectedSizes);
+    QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 140);
     QCOMPARE(geometry(), originalGeometry);
 }
 
-void AppearanceUiTest::desktopFontChangesKeepCompactSizes()
+void AppearanceUiTest::desktopFontChangesUpdateTypography()
 {
-    const auto originalGeometry = geometry();
     QFont larger = QGuiApplication::font();
-    larger.setPixelSize(36);
+    larger.setPointSizeF(18.0);
     QGuiApplication::setFont(larger);
-    QTest::qWait(10);
-    QCOMPARE(fontSizes(), (QList<int>{10, 12, 16, 15, 20}));
-    QCOMPARE(geometry(), originalGeometry);
-    QCOMPARE(m_window->property("font").value<QFont>().pixelSize(), 12);
-    QCOMPARE(m_settings->property("font").value<QFont>().pixelSize(), 12);
+    const qreal resolvedSize = QFontInfo(QGuiApplication::font()).pointSizeF();
+    QTRY_COMPARE(m_theme->property("systemFontPointSize").toReal(), resolvedSize);
+    const QList<qreal> expectedSizes{
+        resolvedSize * 10.0 / 12.0,
+        resolvedSize,
+        resolvedSize * 16.0 / 12.0,
+        resolvedSize * 15.0 / 12.0,
+        resolvedSize * 20.0 / 12.0,
+    };
+    QCOMPARE(fontPointSizes(), expectedSizes);
+    QCOMPARE(m_window->property("font").value<QFont>().pointSizeF(), resolvedSize);
+    QCOMPARE(m_settings->property("font").value<QFont>().pointSizeF(), resolvedSize);
     QObject *tooltip = QQmlProperty::read(control("modeButton"),
         QStringLiteral("ToolTip.toolTip"), qmlContext(control("modeButton"))).value<QObject *>();
     QVERIFY(tooltip);
-    QCOMPARE(tooltip->property("font").value<QFont>().pixelSize(), 12);
+    QCOMPARE(tooltip->property("font").value<QFont>().pointSizeF(), resolvedSize);
 
     QFont different(QStringLiteral("serif"));
-    different.setPixelSize(36);
+    different.setPointSizeF(16.0);
     QGuiApplication::setFont(different);
     QTRY_COMPARE(m_theme->property("uiFont").toString(), QGuiApplication::font().family());
+    const qreal differentSize = QFontInfo(QGuiApplication::font()).pointSizeF();
+    QTRY_COMPARE(m_theme->property("systemFontPointSize").toReal(), differentSize);
     QCOMPARE(control("themeSelector")->property("font").value<QFont>().family(),
              QGuiApplication::font().family());
-    QCOMPARE(control("themeSelector")->property("font").value<QFont>().pixelSize(), 12);
+    QCOMPARE(control("themeSelector")->property("font").value<QFont>().pointSizeF(), differentSize);
     QCOMPARE(tooltip->property("font").value<QFont>().family(), QGuiApplication::font().family());
-    QCOMPARE(fontSizes(), (QList<int>{10, 12, 16, 15, 20}));
+    QCOMPARE(m_theme->property("fontPointSizeBody").toReal(), differentSize);
+}
+
+void AppearanceUiTest::textScalePersistsAndClamps()
+{
+    QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, 110)));
+    QCoreApplication::processEvents();
+    QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 110);
+    QSettings().sync();
+    QCOMPARE(QSettings().value("Appearance/textScalePercent").toInt(), 110);
+
+    m_engine.reset();
+    m_window = nullptr;
+    m_settings = nullptr;
+    m_theme = nullptr;
+    QVERIFY2(loadUi(), qPrintable(m_warnings.join('\n')));
+    QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 110);
+
+    m_engine.reset();
+    m_window = nullptr;
+    m_settings = nullptr;
+    m_theme = nullptr;
+    QSettings settings;
+    settings.setValue(QStringLiteral("Appearance/textScalePercent"), 1000);
+    settings.sync();
+    QVERIFY2(loadUi(), qPrintable(m_warnings.join('\n')));
+    QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 200);
+    QSettings().sync();
+    QCOMPARE(QSettings().value("Appearance/textScalePercent").toInt(), 200);
+
+    m_engine.reset();
+    m_window = nullptr;
+    m_settings = nullptr;
+    m_theme = nullptr;
+    settings.setValue(QStringLiteral("Appearance/textScalePercent"), -10);
+    settings.sync();
+    QVERIFY2(loadUi(), qPrintable(m_warnings.join('\n')));
+    QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 80);
+    QSettings().sync();
+    QCOMPARE(QSettings().value("Appearance/textScalePercent").toInt(), 80);
+
+    auto *reset = control("textSizeResetButton");
+    QTest::mouseClick(m_settings, Qt::LeftButton, Qt::NoModifier,
+                      reset->mapToScene(QPointF(reset->width() / 2, reset->height() / 2)).toPoint());
+    QTRY_COMPARE(m_theme->property("effectiveTextScalePercent").toInt(), 100);
+    QSettings().sync();
+    QCOMPARE(QSettings().value("Appearance/textScalePercent").toInt(), 100);
 }
 
 void AppearanceUiTest::controlsFitTextAndConfirmation()
 {
-    auto *sidebar = control("sidebar");
-    auto *mainColumn = control("mainColumn");
-    auto *footer = control("copyFooter");
-    const QRectF sidebarBounds(sidebar->mapToScene(QPointF()), sidebar->size());
-    const QRectF mainBounds(mainColumn->mapToScene(QPointF()), mainColumn->size());
-    const QRectF footerBounds(footer->mapToScene(QPointF()), footer->size());
-    QCOMPARE(sidebarBounds.bottom(), mainBounds.bottom());
-    QCOMPARE(footerBounds.left(), mainBounds.left());
-    QCOMPARE(footerBounds.right(), mainBounds.right());
-    QCOMPARE(footerBounds.bottom(), mainBounds.bottom());
-    QCOMPARE(footerBounds.left(), sidebarBounds.right());
+    for (const int scale : {80, 100, 200}) {
+        QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, scale)));
+        QTest::qWait(10);
 
-    for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
-                             "deviceSelector", "appearanceButton", "themeSelector"}) {
-        auto *item = control(name);
-        auto *content = item->property("contentItem").value<QQuickItem *>();
-        QVERIFY(content);
-        QVERIFY(item->height() >= 30);
-        QVERIFY(item->height() >= content->implicitHeight() + 12);
-        QVERIFY(item->property("availableWidth").toReal() >= content->implicitWidth());
-        const auto *window = item->window();
-        const QRectF bounds(item->mapToScene(QPointF()), item->size());
-        QVERIFY(QRectF(0, 0, window->width(), window->height()).contains(bounds));
-    }
-    for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton"}) {
-        auto *button = control(name);
-        const QRectF bounds(button->mapToItem(footer, QPointF()), button->size());
-        QVERIFY(QRectF(QPointF(), footer->size()).contains(bounds));
-        const QSizeF originalSize = button->size();
-        button->setProperty("copyConfirmed", true);
-        QCoreApplication::processEvents();
-        QCOMPARE(button->size(), originalSize);
-        button->setProperty("copyConfirmed", false);
-        QCoreApplication::processEvents();
-        QCOMPARE(button->size(), originalSize);
+        auto *sidebar = control("sidebar");
+        auto *mainColumn = control("mainColumn");
+        auto *footer = control("copyFooter");
+        const QRectF sidebarBounds(sidebar->mapToScene(QPointF()), sidebar->size());
+        const QRectF mainBounds(mainColumn->mapToScene(QPointF()), mainColumn->size());
+        const QRectF footerBounds(footer->mapToScene(QPointF()), footer->size());
+        QCOMPARE(sidebarBounds.bottom(), mainBounds.bottom());
+        QCOMPARE(footerBounds.left(), mainBounds.left());
+        QCOMPARE(footerBounds.right(), mainBounds.right());
+        QCOMPARE(footerBounds.bottom(), mainBounds.bottom());
+        QCOMPARE(footerBounds.left(), sidebarBounds.right());
+
+        for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton",
+                                 "deviceSelector", "appearanceButton", "themeSelector",
+                                 "textSizeDecreaseButton", "textSizeResetButton",
+                                 "textSizeIncreaseButton"}) {
+            auto *item = control(name);
+            auto *content = item->property("contentItem").value<QQuickItem *>();
+            QVERIFY(content);
+            QVERIFY(item->height() >= 30);
+            QVERIFY2(item->height() >= content->implicitHeight() + 12,
+                     qPrintable(QStringLiteral("%1 has insufficient vertical padding at %2%: "
+                                               "height %3, implicit %4, content %5")
+                         .arg(QString::fromLatin1(name)).arg(scale)
+                         .arg(item->height()).arg(item->implicitHeight())
+                         .arg(content->implicitHeight())));
+            QVERIFY2(item->property("availableWidth").toReal() >= content->implicitWidth(),
+                     qPrintable(QStringLiteral("%1 has insufficient horizontal space at %2%: "
+                                               "available %3, content %4")
+                         .arg(QString::fromLatin1(name)).arg(scale)
+                         .arg(item->property("availableWidth").toReal())
+                         .arg(content->implicitWidth())));
+            const auto *window = item->window();
+            const QRectF bounds(item->mapToScene(QPointF()), item->size());
+            QVERIFY2(QRectF(0, 0, window->width(), window->height()).contains(bounds),
+                     qPrintable(QStringLiteral("%1 is outside its window at %2%: %3,%4 %5x%6; "
+                                               "main=%7,%8 %9x%10; footer=%11,%12 %13x%14")
+                         .arg(QString::fromLatin1(name)).arg(scale)
+                         .arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())
+                         .arg(mainBounds.x()).arg(mainBounds.y())
+                         .arg(mainBounds.width()).arg(mainBounds.height())
+                         .arg(footerBounds.x()).arg(footerBounds.y())
+                         .arg(footerBounds.width()).arg(footerBounds.height())));
+        }
+        QObject *tooltip = QQmlProperty::read(control("modeButton"),
+            QStringLiteral("ToolTip.toolTip"), qmlContext(control("modeButton"))).value<QObject *>();
+        QVERIFY(tooltip);
+        QCOMPARE(tooltip->property("font").value<QFont>().pointSizeF(),
+                 m_theme->property("fontPointSizeBody").toReal());
+        for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton"}) {
+            auto *button = control(name);
+            const QRectF bounds(button->mapToItem(footer, QPointF()), button->size());
+            QVERIFY(QRectF(QPointF(), footer->size()).contains(bounds));
+            const QSizeF originalSize = button->size();
+            button->setProperty("copyConfirmed", true);
+            QCoreApplication::processEvents();
+            QVERIFY2(button->size() == originalSize,
+                     qPrintable(QStringLiteral("%1 changed size at %2%: %3x%4 to %5x%6")
+                         .arg(QString::fromLatin1(name)).arg(scale)
+                         .arg(originalSize.width()).arg(originalSize.height())
+                         .arg(button->width()).arg(button->height())));
+            button->setProperty("copyConfirmed", false);
+            QCoreApplication::processEvents();
+            QVERIFY2(button->size() == originalSize,
+                     qPrintable(QStringLiteral("%1 did not restore size at %2%")
+                         .arg(QString::fromLatin1(name)).arg(scale)));
+        }
     }
 }
 
-void AppearanceUiTest::dropdownRowsUseCompactFonts()
+void AppearanceUiTest::readerUsesCurrentScaleAndWraps()
+{
+    auto *reader = control("annotationText");
+    reader->setWidth(360);
+    reader->setProperty("markdown", QStringLiteral(
+        "## A reader heading\n\n"
+        "This deliberately long paragraph verifies that reader text continues to wrap "
+        "inside a narrow reading column as adaptive typography becomes larger. "
+        "It repeats enough words to occupy several visual lines at every supported size."));
+    auto *highlighter = reader->findChild<MarkdownHighlighter *>();
+    QVERIFY(highlighter);
+
+    qreal smallContentHeight = 0.0;
+    for (const int scale : {80, 200}) {
+        QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, scale)));
+        QTest::qWait(10);
+        QCOMPARE(reader->property("font").value<QFont>().pointSizeF(),
+                 m_theme->property("fontPointSizeReader").toReal());
+        QCOMPARE(highlighter->headingPointSize(),
+                 m_theme->property("fontPointSizeReaderHeading").toReal());
+        QVERIFY(reader->property("leftPadding").toReal() >= 32.0);
+        QVERIFY(reader->property("rightPadding").toReal() >= 32.0);
+        QVERIFY(reader->property("contentWidth").toReal() <= reader->width());
+        const qreal contentHeight = reader->property("contentHeight").toReal();
+        QVERIFY(contentHeight > 0.0);
+        if (scale == 80)
+            smallContentHeight = contentHeight;
+        else
+            QVERIFY(contentHeight > smallContentHeight);
+    }
+}
+
+void AppearanceUiTest::dropdownRowsUseCurrentFontSize()
 {
     QObject *popup = control("themeSelector")->property("popup").value<QObject *>();
     QVERIFY(popup);
-    QVERIFY(QMetaObject::invokeMethod(popup, "open"));
     auto *list = popup->property("contentItem").value<QQuickItem *>();
     QVERIFY(list);
-    QTRY_VERIFY(popup->property("visible").toBool());
-    QTRY_VERIFY(visualDescendants(list, QStringLiteral("themeOption")).size() >= 3);
-    for (auto *row : visualDescendants(list, QStringLiteral("themeOption"))) {
-        QCOMPARE(row->property("font").value<QFont>().pixelSize(), 12);
-        QVERIFY(row->height() >= 30);
-        auto *content = row->property("contentItem").value<QQuickItem *>();
-        QVERIFY(content);
-        QVERIFY(row->height() >= content->implicitHeight() + 12);
+    for (const int scale : {80, 100, 200}) {
+        QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, scale)));
+        QVERIFY(QMetaObject::invokeMethod(popup, "open"));
+        QTRY_VERIFY(popup->property("visible").toBool());
+        QTRY_VERIFY(visualDescendants(list, QStringLiteral("themeOption")).size() >= 3);
+        for (auto *row : visualDescendants(list, QStringLiteral("themeOption"))) {
+            QCOMPARE(row->property("font").value<QFont>().pointSizeF(),
+                     m_theme->property("fontPointSizeBody").toReal());
+            QVERIFY(row->height() >= 30);
+            auto *content = row->property("contentItem").value<QQuickItem *>();
+            QVERIFY(content);
+            QVERIFY(row->height() >= content->implicitHeight() + 12);
+        }
+        QVERIFY(QMetaObject::invokeMethod(popup, "close"));
+        QTRY_VERIFY(!popup->property("visible").toBool());
     }
 }
 

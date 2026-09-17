@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QFont>
+#include <QFontInfo>
 #include <QGuiApplication>
 #include <QPalette>
 
@@ -57,10 +58,11 @@ void SystemAppearanceTest::followsApplicationFontChanges()
     SystemAppearance appearance;
     QSignalSpy fontsChanged(&appearance, &SystemAppearance::fontsChanged);
     QFont changed(QStringLiteral("monospace"));
-    changed.setPixelSize(24);
+    changed.setPointSizeF(18.5);
     QGuiApplication::setFont(changed);
 
     QTRY_COMPARE(appearance.uiFont(), QGuiApplication::font());
+    QTRY_COMPARE(appearance.uiFontPointSize(), QFontInfo(QGuiApplication::font()).pointSizeF());
     QVERIFY(!fontsChanged.isEmpty());
 }
 
@@ -71,6 +73,7 @@ void SystemAppearanceTest::suppliesLiveApplicationAppearance()
     QVERIFY(!appearance.palette().isEmpty());
     QVERIFY(appearance.palette().contains(QStringLiteral("accent")));
     QVERIFY(!appearance.uiFont().family().isEmpty());
+    QVERIFY(appearance.uiFontPointSize() > 0.0);
     QVERIFY(!appearance.fixedFont().family().isEmpty());
 }
 

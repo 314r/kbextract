@@ -39,6 +39,22 @@ void MarkdownHighlighter::setHeadingPixelSize(int pixelSize)
     emit headingPixelSizeChanged();
 }
 
+qreal MarkdownHighlighter::headingPointSize() const
+{
+    return m_headingPointSize;
+}
+
+void MarkdownHighlighter::setHeadingPointSize(qreal pointSize)
+{
+    const qreal normalized = pointSize > 0.0 ? pointSize : -1.0;
+    if (m_headingPointSize == normalized)
+        return;
+
+    m_headingPointSize = normalized;
+    rehighlight();
+    emit headingPointSizeChanged();
+}
+
 void MarkdownHighlighter::highlightBlock(const QString &text)
 {
     if (!text.startsWith(QStringLiteral("## ")))
@@ -46,6 +62,9 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
 
     QTextCharFormat headingFormat;
     headingFormat.setFontWeight(QFont::Bold);
-    headingFormat.setProperty(QTextFormat::FontPixelSize, m_headingPixelSize);
+    if (m_headingPointSize > 0.0)
+        headingFormat.setFontPointSize(m_headingPointSize);
+    else
+        headingFormat.setProperty(QTextFormat::FontPixelSize, m_headingPixelSize);
     setFormat(0, text.size(), headingFormat);
 }

@@ -9,10 +9,14 @@ import Kbextract
 Item {
     id: appearancePage
 
+    implicitHeight: contentLayout.implicitHeight + 64
+
     required property string currentThemeMode
     required property var availableThemeModes
+    required property int currentTextScalePercent
 
     signal themeModeSelected(string mode)
+    signal textScalePercentSelected(int percent)
 
     function themeModeLabel(mode) {
         return mode === "system"
@@ -24,8 +28,41 @@ Item {
                     : qsTr("Omarchy")
     }
 
+    component TextSizeButton: Button {
+        id: textSizeButton
+
+        horizontalPadding: Theme.controlHorizontalPadding
+        verticalPadding: Theme.controlVerticalPadding
+        implicitHeight: Math.max(Theme.controlMinHeight,
+            Math.ceil(contentItem.implicitHeight) + topPadding + bottomPadding)
+        width: implicitWidth
+        height: implicitHeight
+        font.family: Theme.uiFont
+        font.pointSize: Theme.fontPointSizeBody
+        palette.buttonText: enabled ? Theme.text : Theme.textFaint
+
+        contentItem: Text {
+            text: textSizeButton.text
+            color: textSizeButton.enabled ? Theme.text : Theme.textFaint
+            font: textSizeButton.font
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        background: Rectangle {
+            color: textSizeButton.down || textSizeButton.hovered
+                ? Theme.surfaceHover : Theme.surface
+            border.width: textSizeButton.activeFocus ? 2 : 1
+            border.color: textSizeButton.activeFocus ? Theme.accent : Theme.lineStrong
+        }
+    }
+
     ColumnLayout {
-        anchors.fill: parent
+        id: contentLayout
+
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.margins: 32
         spacing: 0
 
@@ -34,7 +71,7 @@ Item {
             text: qsTr("Appearance")
             color: Theme.text
             font.family: Theme.uiFont
-            font.pixelSize: Theme.fontSizeHeading
+            font.pointSize: Theme.fontPointSizeHeading
             font.weight: Font.DemiBold
         }
 
@@ -52,7 +89,7 @@ Item {
                     text: qsTr("Theme")
                     color: Theme.text
                     font.family: Theme.uiFont
-                    font.pixelSize: Theme.fontSizeBody
+                    font.pointSize: Theme.fontPointSizeBody
                     font.weight: Font.DemiBold
                 }
 
@@ -61,7 +98,7 @@ Item {
                     text: qsTr("Choose the color theme used by kbextract.")
                     color: Theme.textMuted
                     font.family: Theme.uiFont
-                    font.pixelSize: Theme.fontSizeBody
+                    font.pointSize: Theme.fontPointSizeBody
                     wrapMode: Text.WordWrap
                 }
             }
@@ -74,10 +111,10 @@ Item {
                 Layout.minimumWidth: 180
                 Layout.maximumWidth: 180
                 Layout.alignment: Qt.AlignVCenter
-                Layout.preferredHeight: implicitHeight
                 implicitHeight: Math.max(Theme.controlMinHeight,
                     Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
                     + topPadding + bottomPadding)
+                height: implicitHeight
                 leftPadding: Theme.controlHorizontalPadding
                 rightPadding: Theme.controlHorizontalPadding + indicator.implicitWidth + spacing
                 verticalPadding: Theme.controlVerticalPadding
@@ -89,7 +126,7 @@ Item {
                     ? appearancePage.themeModeLabel(appearancePage.availableThemeModes[currentIndex])
                     : ""
                 font.family: Theme.uiFont
-                font.pixelSize: Theme.fontSizeBody
+                font.pointSize: Theme.fontPointSizeBody
                 Accessible.name: qsTr("Theme")
                 Accessible.description: qsTr("Choose the color theme used by kbextract.")
 
@@ -108,7 +145,7 @@ Item {
                     text: appearancePage.themeModeLabel(modelData)
                     highlighted: themeSelector.highlightedIndex === index
                     font.family: Theme.uiFont
-                    font.pixelSize: Theme.fontSizeBody
+                    font.pointSize: Theme.fontPointSizeBody
 
                     contentItem: Text {
                         text: themeOption.text
@@ -137,7 +174,7 @@ Item {
                     text: qsTr("v")
                     color: Theme.textMuted
                     font.family: Theme.monoFont
-                    font.pixelSize: Theme.fontSizeCaption
+                    font.pointSize: Theme.fontPointSizeCaption
                 }
 
                 background: Rectangle {
@@ -173,6 +210,65 @@ Item {
             }
         }
 
-        Item { Layout.fillHeight: true }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 28
+            spacing: 24
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Text size")
+                    color: Theme.text
+                    font.family: Theme.uiFont
+                    font.pointSize: Theme.fontPointSizeBody
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: qsTr("Scale the system text size throughout kbextract.")
+                    color: Theme.textMuted
+                    font.family: Theme.uiFont
+                    font.pointSize: Theme.fontPointSizeBody
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            RowLayout {
+                spacing: 0
+                Layout.alignment: Qt.AlignVCenter
+
+                TextSizeButton {
+                    objectName: "textSizeDecreaseButton"
+                    text: qsTr("−")
+                    enabled: appearancePage.currentTextScalePercent > 80
+                    Accessible.name: qsTr("Decrease text size")
+                    onClicked: appearancePage.textScalePercentSelected(
+                        appearancePage.currentTextScalePercent - 10)
+                }
+
+                TextSizeButton {
+                    objectName: "textSizeResetButton"
+                    text: qsTr("%1%").arg(appearancePage.currentTextScalePercent)
+                    Accessible.name: qsTr("Reset text size to system default")
+                    Accessible.description: qsTr("Current text size is %1 percent")
+                        .arg(appearancePage.currentTextScalePercent)
+                    onClicked: appearancePage.textScalePercentSelected(100)
+                }
+
+                TextSizeButton {
+                    objectName: "textSizeIncreaseButton"
+                    text: qsTr("+")
+                    enabled: appearancePage.currentTextScalePercent < 200
+                    Accessible.name: qsTr("Increase text size")
+                    onClicked: appearancePage.textScalePercentSelected(
+                        appearancePage.currentTextScalePercent + 10)
+                }
+            }
+        }
     }
 }

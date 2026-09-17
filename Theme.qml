@@ -28,6 +28,9 @@ QtObject {
     })
     property string systemUiFont: "sans-serif"
     property string systemMonoFont: "monospace"
+    property bool adaptiveTypography: false
+    property real systemFontPointSize: 9
+    property int textScalePercent: 100
 
     property var omarchyPalette: ({
         "background": "#030203",
@@ -80,7 +83,17 @@ QtObject {
 
     readonly property string uiFont: systemUiFont
     readonly property string monoFont: systemMonoFont
-    // Logical pixels: Qt applies display scaling. Color modes never resize text.
+    readonly property int effectiveTextScalePercent: Math.max(80, Math.min(200, textScalePercent))
+    readonly property real effectiveFontPointSize: Math.max(1, systemFontPointSize)
+        * effectiveTextScalePercent / 100
+    // These ratios preserve the existing 10/12/16/15/20 hierarchy while the
+    // system point size and the user's override remain independent of colors.
+    readonly property real fontPointSizeCaption: effectiveFontPointSize * 10 / 12
+    readonly property real fontPointSizeBody: effectiveFontPointSize
+    readonly property real fontPointSizeHeading: effectiveFontPointSize * 16 / 12
+    readonly property real fontPointSizeReader: effectiveFontPointSize * 15 / 12
+    readonly property real fontPointSizeReaderHeading: effectiveFontPointSize * 20 / 12
+    // The macOS presentation keeps its existing fixed reader sizes for now.
     readonly property int fontSizeCaption: 10
     readonly property int fontSizeBody: 12
     readonly property int fontSizeHeading: 16

@@ -2,6 +2,7 @@
 
 #include <QEvent>
 #include <QFontDatabase>
+#include <QFontInfo>
 #include <QGuiApplication>
 #include <QPalette>
 #include <QStyleHints>
@@ -52,6 +53,12 @@ QFont SystemAppearance::uiFont() const
 QFont SystemAppearance::fixedFont() const
 {
     return m_fixedFont;
+}
+
+qreal SystemAppearance::uiFontPointSize() const
+{
+    const qreal pointSize = QFontInfo(m_uiFont).pointSizeF();
+    return pointSize > 0.0 ? pointSize : 9.0;
 }
 
 bool SystemAppearance::dark() const

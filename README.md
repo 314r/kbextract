@@ -56,17 +56,19 @@ The sidebar is resizable from 246 to 420 logical pixels and remembers its width.
 
 On Linux and Windows, the app retains its custom controls and defaults to System
 mode, following the operating system's palette, accent, light/dark preference,
-UI font family, and fixed-width font family. Use the theme icon in the header
-to open Settings, then choose System, Light, or Dark under Appearance. On
-Omarchy systems a fourth Omarchy mode follows
+UI font family, fixed-width font family, and UI font point size. Use the theme
+icon in the header to open Settings, then choose System, Light, or Dark under
+Appearance. On Omarchy systems a fourth Omarchy mode follows
 `~/.local/state/omarchy/current/theme/colors.toml`. A saved Omarchy selection
 falls back to System if Omarchy is unavailable.
 
-The custom Linux/Windows interface retains its compact text scale: 12 logical
-pixels for UI text, 10 for captions, and 16 for UI headings. Its sizes remain
-constant across color themes and desktop font-size settings. Both presentations
-use 15 logical pixels for reader text and 20 for reader headings. Qt applies
-display scaling, including Retina.
+The custom Linux/Windows interface derives captions, body text, headings, reader
+text, and reader headings from that system point size. Appearance also provides
+an 80–200% text-size override in 10% steps. The override is saved independently,
+and changing between System, Light, Dark, and Omarchy never changes typography.
+Qt applies display scaling without multiplying these point sizes again. The
+macOS reader retains its fixed 15-pixel text and 20-pixel heading sizes in this
+iteration.
 
 On macOS, File → Open Database… (`⌘O`) opens a database, Refresh Devices (`⌘R`)
 reloads devices, and Close Window (`⌘W`) exits the app. Closing the red window

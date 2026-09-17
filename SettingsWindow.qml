@@ -10,9 +10,11 @@ ApplicationWindow {
 
     property string currentThemeMode: "system"
     property var availableThemeModes: ["system", "light", "dark"]
+    property int currentTextScalePercent: 100
     property int currentSectionIndex: 0
 
     signal themeModeSelected(string mode)
+    signal textScalePercentSelected(int percent)
 
     visible: false
     width: 760
@@ -23,7 +25,7 @@ ApplicationWindow {
     title: qsTr("Settings")
     color: Theme.canvas
     font.family: Theme.uiFont
-    font.pixelSize: Theme.fontSizeBody
+    font.pointSize: Theme.fontPointSizeBody
 
     RowLayout {
         anchors.fill: parent
@@ -57,7 +59,7 @@ ApplicationWindow {
                 text: qsTr("Appearance")
                 hoverEnabled: true
                 font.family: Theme.uiFont
-                font.pixelSize: Theme.fontSizeBody
+                font.pointSize: Theme.fontPointSizeBody
                 font.weight: Font.DemiBold
                 palette.buttonText: Theme.text
                 Accessible.name: text
@@ -82,12 +84,27 @@ ApplicationWindow {
             Layout.fillHeight: true
             currentIndex: settingsWindow.currentSectionIndex
 
-            AppearanceSettingsPage {
-                currentThemeMode: settingsWindow.currentThemeMode
-                availableThemeModes: settingsWindow.availableThemeModes
+            ScrollView {
+                id: appearanceScroll
 
-                onThemeModeSelected: function(mode) {
-                    settingsWindow.themeModeSelected(mode)
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+
+                AppearanceSettingsPage {
+                    width: appearanceScroll.availableWidth
+                    height: Math.max(implicitHeight, appearanceScroll.availableHeight)
+                    currentThemeMode: settingsWindow.currentThemeMode
+                    availableThemeModes: settingsWindow.availableThemeModes
+                    currentTextScalePercent: settingsWindow.currentTextScalePercent
+
+                    onThemeModeSelected: function(mode) {
+                        settingsWindow.themeModeSelected(mode)
+                    }
+                    onTextScalePercentSelected: function(percent) {
+                        settingsWindow.textScalePercentSelected(percent)
+                    }
                 }
             }
         }

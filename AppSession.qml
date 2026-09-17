@@ -6,6 +6,7 @@ import Kbextract
 QtObject {
     id: session
 
+    property bool adaptiveTypography: false
     readonly property KoboLibrary library: KoboLibrary { }
     readonly property ClipboardHelper clipboard: ClipboardHelper { }
     readonly property FileUrl fileUrl: FileUrl { }
@@ -60,6 +61,8 @@ QtObject {
         Theme.systemPalette = appearance.palette
         Theme.systemUiFont = appearance.uiFont.family
         Theme.systemMonoFont = appearance.fixedFont.family
+        Theme.systemFontPointSize = appearance.uiFontPointSize
+        Theme.adaptiveTypography = adaptiveTypography
     }
 
     readonly property SystemAppearance appearance: SystemAppearance {
@@ -82,4 +85,6 @@ QtObject {
         applySystemAppearance()
         refresh()
     }
+
+    onAdaptiveTypographyChanged: Theme.adaptiveTypography = adaptiveTypography
 }
