@@ -73,11 +73,6 @@ Kirigami.AbstractApplicationWindow {
         Kirigami.Theme.negativeTextColor: Theme.danger
 
         anchors.fill: parent
-        FontMetrics {
-            id: headingMetrics
-            font.family: Theme.uiFont
-            font.pointSize: Theme.fontPointSizeHeading
-        }
         Kirigami.GlobalDrawer {
             id: navigationDrawer
             objectName: "settingsSidebar"
@@ -129,15 +124,18 @@ Kirigami.AbstractApplicationWindow {
                     spacing: Kirigami.Units.smallSpacing
 
                     Label {
+                        objectName: "settingsSidebarTitle"
                         text: qsTr("Settings")
+                        font.family: Theme.uiFont
+                        font.pointSize: Theme.fontPointSizeBody
                         font.capitalization: Font.AllUppercase
                         font.weight: Font.DemiBold
                         color: Theme.textMuted
                         Layout.fillWidth: true
-                        Layout.preferredHeight: headingMetrics.height
-                        Layout.topMargin: 2 * Kirigami.Units.largeSpacing
-                        Layout.bottomMargin: 2 * Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing
+                        Layout.minimumHeight: settingsHeader.height
+                        Layout.maximumHeight: settingsHeader.height
                         Layout.leftMargin: 2 * Kirigami.Units.largeSpacing
+                        padding: 0
                         verticalAlignment: Text.AlignVCenter
                     }
 
@@ -194,6 +192,7 @@ Kirigami.AbstractApplicationWindow {
             spacing: 0
 
             Rectangle {
+                id: settingsHeader
                 objectName: "settingsHeader"
                 Layout.fillWidth: true
                 implicitHeight: headerRow.implicitHeight + 2 * Kirigami.Units.largeSpacing
@@ -213,10 +212,11 @@ Kirigami.AbstractApplicationWindow {
                         Layout.fillWidth: true
                         text: settingsWindow.sections[settingsWindow.currentSectionIndex].title
                         font.family: Theme.uiFont
-                        font.pointSize: Theme.fontPointSizeHeading
+                        font.pointSize: Theme.fontPointSizeBody
                         font.weight: Font.DemiBold
-                        color: Theme.text
+                        color: Theme.textMuted
                         elide: Text.ElideRight
+                        padding: 0
                         verticalAlignment: Text.AlignVCenter
                     }
 

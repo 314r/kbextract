@@ -423,6 +423,25 @@ void AppearanceUiTest::appearanceSubsectionsUseKirigamiSpacing()
                 auto *title = control("settingsSectionTitle");
                 auto *closeButton = control("settingsCloseButton");
                 QVERIFY(header && title && closeButton);
+                auto *sidebarTitle = control("settingsSidebarTitle");
+                QVERIFY(sidebarTitle);
+                for (const int section : {0, 1, 0}) {
+                    QVERIFY(m_settings->setProperty("currentSectionIndex", section));
+                    QCoreApplication::processEvents();
+                    const QFont sidebarFont = sidebarTitle->property("font").value<QFont>();
+                    const QFont titleFont = title->property("font").value<QFont>();
+                    QCOMPARE(titleFont.pointSizeF(), m_theme->property("fontPointSizeBody").toReal());
+                    QCOMPARE(sidebarFont.pointSizeF(), titleFont.pointSizeF());
+                    QCOMPARE(sidebarFont.family(), titleFont.family());
+                    QCOMPARE(sidebarFont.weight(), QFont::DemiBold);
+                    QCOMPARE(titleFont.weight(), QFont::DemiBold);
+                    const qreal sidebarBaseline = sidebarTitle->mapToScene(
+                        QPointF(0, sidebarTitle->baselineOffset())).y();
+                    const qreal titleBaseline = title->mapToScene(QPointF(0, title->baselineOffset())).y();
+                    QVERIFY2(qAbs(sidebarBaseline - titleBaseline) <= 1.0,
+                        qPrintable(QStringLiteral("Header baselines differ at %1%: %2 vs %3")
+                            .arg(scale).arg(sidebarBaseline).arg(titleBaseline)));
+                }
                 const QRectF headerBounds = bounds(header);
                 QCOMPARE(headerBounds.top(), 0.0);
                 QCOMPARE(headerBounds.left(), bounds(page).left());
