@@ -78,16 +78,6 @@ ApplicationWindow {
         return qsTr("SYSTEM")
     }
 
-    function themeModeIcon() {
-        if (Theme.mode === "light")
-            return "assets/icons/theme-light.svg"
-        if (Theme.mode === "dark")
-            return "assets/icons/theme-dark.svg"
-        if (Theme.mode === "omarchy")
-            return "assets/icons/theme-omarchy.svg"
-        return "assets/icons/theme-system.svg"
-    }
-
     component ToolButton: Button {
         id: control
 
@@ -252,7 +242,7 @@ ApplicationWindow {
                 text: window.themeModeLabel()
                 display: AbstractButton.IconOnly
                 hoverEnabled: true
-                icon.source: window.themeModeIcon()
+                icon.source: "assets/icons/settings.svg"
                 icon.width: Theme.controlIconSize
                 icon.height: Theme.controlIconSize
                 icon.color: Theme.text

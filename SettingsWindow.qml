@@ -193,6 +193,70 @@ Kirigami.AbstractApplicationWindow {
             anchors.rightMargin: navigationDrawer.edge === Qt.RightEdge ? navigationDrawer.width : 0
             spacing: 0
 
+            Rectangle {
+                objectName: "settingsHeader"
+                Layout.fillWidth: true
+                implicitHeight: headerRow.implicitHeight + 2 * Kirigami.Units.largeSpacing
+                color: Theme.panel
+
+                RowLayout {
+                    id: headerRow
+                    anchors.fill: parent
+                    anchors.leftMargin: 3 * Kirigami.Units.largeSpacing
+                    anchors.rightMargin: Kirigami.Units.smallSpacing
+                    anchors.topMargin: Kirigami.Units.largeSpacing
+                    anchors.bottomMargin: Kirigami.Units.largeSpacing
+                    spacing: Kirigami.Units.largeSpacing
+
+                    Label {
+                        objectName: "settingsSectionTitle"
+                        Layout.fillWidth: true
+                        text: settingsWindow.sections[settingsWindow.currentSectionIndex].title
+                        font.family: Theme.uiFont
+                        font.pointSize: Theme.fontPointSizeHeading
+                        font.weight: Font.DemiBold
+                        color: Theme.text
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    ToolButton {
+                        id: closeButton
+                        objectName: "settingsCloseButton"
+                        text: qsTr("Close settings")
+                        display: AbstractButton.IconOnly
+                        icon.source: "assets/icons/close.svg"
+                        icon.width: Theme.controlIconSize
+                        icon.height: Theme.controlIconSize
+                        icon.color: Theme.text
+                        implicitWidth: Math.max(Theme.controlMinHeight, implicitContentWidth + leftPadding + rightPadding)
+                        implicitHeight: Math.max(Theme.controlMinHeight, implicitContentHeight + topPadding + bottomPadding)
+                        focusPolicy: Qt.StrongFocus
+                        hoverEnabled: true
+                        Accessible.name: text
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: text
+                        ToolTip.toolTip.font.family: Theme.uiFont
+                        ToolTip.toolTip.font.pointSize: Theme.fontPointSizeBody
+                        background: Rectangle {
+                            radius: Kirigami.Units.cornerRadius
+                            color: closeButton.down || closeButton.hovered ? Theme.surfaceHover : "transparent"
+                            border.width: closeButton.visualFocus ? 2 : 0
+                            border.color: Theme.accent
+                        }
+                        onClicked: settingsWindow.close()
+                    }
+                }
+
+                Kirigami.Separator {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    color: Theme.line
+                }
+            }
+
             StackLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true

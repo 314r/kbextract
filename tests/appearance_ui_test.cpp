@@ -72,6 +72,7 @@ private slots:
     void chromeFollowsBodyMetricsAndFitsSidebar();
     void settingsFollowLiveOmarchyPalette();
     void settingsSidebarNavigation();
+    void settingsCloseAndReopen();
     void appearanceSubsectionsUseKirigamiSpacing();
 
 private:
@@ -290,6 +291,9 @@ void AppearanceUiTest::settingsSidebarNavigation()
     auto *appearance = control("appearanceButton");
     auto *exportButton = control("exportButton");
     auto *placeholder = control("exportPlaceholder");
+    auto *sectionTitle = control("settingsSectionTitle");
+    QVERIFY(sectionTitle);
+    QCOMPARE(sectionTitle->property("text").toString(), QStringLiteral("Appearance"));
     QVERIFY(appearance->property("highlighted").toBool());
     QVERIFY(!placeholder->isVisible());
 
@@ -327,6 +331,7 @@ void AppearanceUiTest::settingsSidebarNavigation()
                     QTest::mouseClick(m_settings, Qt::LeftButton, Qt::NoModifier,
                         item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
                     QTRY_COMPARE(m_settings->property("currentSectionIndex").toInt(), item == appearance ? 0 : 1);
+                    QCOMPARE(sectionTitle->property("text").toString(), item->property("text").toString());
                     QCOMPARE(placeholder->isVisible(), item == exportButton);
                     QCOMPARE(m_theme->property("mode").toString(), QString::fromLatin1(mode));
                     QCOMPARE(m_theme->property("effectiveTextScalePercent").toInt(), scale);
@@ -340,6 +345,33 @@ void AppearanceUiTest::settingsSidebarNavigation()
                 }
             }
         }
+    }
+}
+
+void AppearanceUiTest::settingsCloseAndReopen()
+{
+    auto *closeButton = control("settingsCloseButton");
+    QVERIFY(closeButton);
+    QVERIFY(m_settings->setProperty("currentSectionIndex", 1));
+    QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, 140)));
+
+    for (const bool keyboard : {false, true}) {
+        if (keyboard) {
+            closeButton->forceActiveFocus(Qt::TabFocusReason);
+            QTest::keyClick(m_settings, Qt::Key_Space);
+        } else {
+            QTest::mouseClick(m_settings, Qt::LeftButton, Qt::NoModifier,
+                closeButton->mapToScene(QPointF(closeButton->width() / 2, closeButton->height() / 2)).toPoint());
+        }
+        QTRY_VERIFY(!m_settings->isVisible());
+        QVERIFY(m_window->isVisible());
+        auto *openButton = control("modeButton");
+        QTest::mouseClick(m_window, Qt::LeftButton, Qt::NoModifier,
+            openButton->mapToScene(QPointF(openButton->width() / 2, openButton->height() / 2)).toPoint());
+        QTRY_VERIFY(m_settings->isVisible());
+        QCOMPARE(m_settings->property("currentSectionIndex").toInt(), 1);
+        QCOMPARE(m_settings->property("currentTextScalePercent").toInt(), 140);
+        QCOMPARE(control("settingsSectionTitle")->property("text").toString(), QStringLiteral("Export"));
     }
 }
 
@@ -387,6 +419,18 @@ void AppearanceUiTest::appearanceSubsectionsUseKirigamiSpacing()
                 QVERIFY(QMetaObject::invokeMethod(m_settings, "textScalePercentSelected", Q_ARG(int, scale)));
                 QVERIFY(flickable->setProperty("contentY", 0.0));
                 QTest::qWait(30);
+                auto *header = control("settingsHeader");
+                auto *title = control("settingsSectionTitle");
+                auto *closeButton = control("settingsCloseButton");
+                QVERIFY(header && title && closeButton);
+                const QRectF headerBounds = bounds(header);
+                QCOMPARE(headerBounds.top(), 0.0);
+                QCOMPARE(headerBounds.left(), bounds(page).left());
+                QVERIFY(headerBounds.contains(bounds(title)));
+                QVERIFY(headerBounds.contains(bounds(closeButton)));
+                QVERIFY(bounds(title).right() <= bounds(closeButton).left());
+                QVERIFY(title->width() >= title->implicitWidth());
+                QVERIFY(qAbs(bounds(title).left() - bounds(themeLabel).left()) <= 1.0);
                 QVERIFY(qAbs(bounds(themeLabel).top() - bounds(page).top() - contentMargin) <= 1.0);
                 QVERIFY(qAbs(bounds(themeLabel).left() - bounds(page).left() - contentMargin) <= 1.0);
                 QVERIFY(qAbs(bounds(page).right() - bounds(themeSelector).right() - contentMargin) <= 1.0);
@@ -428,6 +472,7 @@ void AppearanceUiTest::appearanceSubsectionsUseKirigamiSpacing()
                 }
                 const qreal maximumContentY = qMax(0.0, flickable->property("contentHeight").toReal() - flickable->height());
                 QVERIFY(flickable->setProperty("contentY", maximumContentY));
+                QCOMPARE(bounds(header), headerBounds);
                 QTRY_VERIFY(bounds(sizeDescription).top() >= bounds(flickable).top() - 1.0);
                 QTRY_VERIFY(bounds(sizeDescription).bottom() <= bounds(flickable).bottom() - contentMargin + 1.0);
             }

@@ -67,6 +67,8 @@ qt_add_qml_module(kbextract
         assets/icons/theme-system.svg
         assets/icons/settings-appearance.svg
         assets/icons/settings-export.svg
+        assets/icons/settings.svg
+        assets/icons/close.svg
         assets/icons/kbextract.svg
 )
 
@@ -240,6 +242,8 @@ if(BUILD_TESTING)
             Main.qml SettingsWindow.qml AppearanceSettingsPage.qml Theme.qml
             AppSession.qml AnnotationBody.qml
             assets/icons/settings-appearance.svg assets/icons/settings-export.svg
+            assets/icons/settings.svg
+            assets/icons/close.svg
             assets/icons/theme-system.svg assets/icons/theme-light.svg
             assets/icons/theme-dark.svg assets/icons/theme-omarchy.svg
     )
