@@ -3,6 +3,8 @@ pragma Singleton
 import QtQuick
 
 QtObject {
+    id: theme
+
     property string mode: "system"
     property bool systemDark: false
     property bool omarchyDark: true
@@ -99,9 +101,23 @@ QtObject {
     readonly property int fontSizeHeading: 16
     readonly property int fontSizeReader: 15
     readonly property int fontSizeReaderHeading: 20
-    readonly property int controlMinHeight: 30
-    readonly property int controlHorizontalPadding: 10
-    readonly property int controlVerticalPadding: 6
+    // Control chrome follows native GTK/Qt button proportions: vertical padding
+    // tracks the font descent (~4px at 11pt) instead of 40% of the line box.
+    // 24px is GTK's usual min-height, not the old 30px pixel-UI floor.
+    readonly property int controlVerticalPadding: bodyMetrics.height > 0
+        ? Math.max(3, Math.round(bodyMetrics.descent))
+        : 4
+    readonly property int controlHorizontalPadding: bodyMetrics.averageCharWidth > 0
+        ? Math.round(bodyMetrics.averageCharWidth)
+        : 10
+    readonly property int controlMinHeight: Math.max(24,
+        Math.round(bodyMetrics.height) + 2 * controlVerticalPadding)
+    readonly property int controlIconSize: Math.max(16, Math.round(controlMinHeight * 0.6))
     readonly property int radius: 0
     readonly property int smallRadius: 0
+
+    readonly property FontMetrics bodyMetrics: FontMetrics {
+        font.family: theme.uiFont
+        font.pointSize: theme.fontPointSizeBody
+    }
 }

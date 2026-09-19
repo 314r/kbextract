@@ -22,11 +22,14 @@ read-only annotation extraction, Markdown formatting, and clipboard export.
 
 - Linux, macOS, or Windows
 - Qt 6.9 or later with QML, Quick, Quick Controls 2, SQLite, and SVG support
+- KDE Kirigami 6.13 or later (including its QML modules)
 - CMake 3.21 or later
 - A C++20 compiler
 
 Official packages use Qt 6.9.3. Linux builds use GCC, macOS builds use Clang,
-and Windows builds use MSVC 2022.
+and Windows builds use MSVC 2022. CI builds Kirigami 6.13.0 and its ECM build
+dependency from checksum-verified KDE releases into the Qt SDK. On Arch/Omarchy,
+install the `kirigami` package for development.
 
 ## Build and run
 
@@ -54,7 +57,11 @@ and accent, including changes while running. There is no Mac theme picker or
 Settings window. Previously saved theme preferences are retained but ignored.
 The sidebar is resizable from 246 to 420 logical pixels and remembers its width.
 
-On Linux and Windows, the app retains its custom controls and defaults to System
+On Linux and Windows, Settings uses Kirigami layouts, headings, and spacing with
+standard Qt Fusion controls. A persistent Kirigami sidebar provides Appearance
+and an Export placeholder for future settings. Both share the app palette, including live Omarchy
+colors and the app text-size setting. The main workspace retains its custom
+controls. The app defaults to System
 mode, following the operating system's palette, accent, light/dark preference,
 UI font family, fixed-width font family, and UI font point size. Use the theme
 icon in the header to open Settings, then choose System, Light, or Dark under

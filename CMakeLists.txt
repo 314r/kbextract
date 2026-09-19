@@ -23,6 +23,8 @@ include(CTest)
 
 find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Sql Svg)
 
+find_package(KF6Kirigami 6.13 REQUIRED)
+
 qt_standard_project_setup(REQUIRES 6.9)
 
 qt_add_executable(kbextract
@@ -63,6 +65,8 @@ qt_add_qml_module(kbextract
         assets/icons/theme-light.svg
         assets/icons/theme-omarchy.svg
         assets/icons/theme-system.svg
+        assets/icons/settings-appearance.svg
+        assets/icons/settings-export.svg
         assets/icons/kbextract.svg
 )
 
@@ -235,6 +239,7 @@ if(BUILD_TESTING)
         FILES
             Main.qml SettingsWindow.qml AppearanceSettingsPage.qml Theme.qml
             AppSession.qml AnnotationBody.qml
+            assets/icons/settings-appearance.svg assets/icons/settings-export.svg
             assets/icons/theme-system.svg assets/icons/theme-light.svg
             assets/icons/theme-dark.svg assets/icons/theme-omarchy.svg
     )

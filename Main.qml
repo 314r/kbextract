@@ -101,9 +101,8 @@ ApplicationWindow {
         implicitHeight: Math.max(Theme.controlMinHeight,
             Math.ceil(contentItem.implicitHeight) + topPadding + bottomPadding)
         height: implicitHeight
-        font.family: Theme.monoFont
+        font.family: Theme.uiFont
         font.pointSize: Theme.fontPointSizeBody
-        font.weight: Font.Medium
 
         contentItem: Item {
             implicitWidth: Math.max(label.implicitWidth, alternateLabel.implicitWidth)
@@ -139,10 +138,9 @@ ApplicationWindow {
 
     component SectionLabel: Text {
         color: Theme.text
-        font.family: Theme.monoFont
-        font.pointSize: Theme.fontPointSizeCaption
+        font.family: Theme.uiFont
+        font.pointSize: Theme.fontPointSizeBody
         font.weight: Font.DemiBold
-        font.letterSpacing: 1.1
     }
 
     component SeparatorLine: Rectangle {
@@ -247,16 +245,16 @@ ApplicationWindow {
                 id: modeButton
                 objectName: "modeButton"
 
-                implicitWidth: 36
-                implicitHeight: 30
+                implicitWidth: Theme.controlMinHeight + 6
+                implicitHeight: Theme.controlMinHeight
                 Layout.preferredWidth: implicitWidth
                 Layout.preferredHeight: implicitHeight
                 text: window.themeModeLabel()
                 display: AbstractButton.IconOnly
                 hoverEnabled: true
                 icon.source: window.themeModeIcon()
-                icon.width: 18
-                icon.height: 18
+                icon.width: Theme.controlIconSize
+                icon.height: Theme.controlIconSize
                 icon.color: Theme.text
                 icon.cache: true
                 Accessible.name: qsTr("Open settings. Current theme: %1").arg(text)
@@ -306,7 +304,8 @@ ApplicationWindow {
                 spacing: 12
 
                 SectionLabel {
-                    text: qsTr("DEVICE")
+                    objectName: "deviceLabel"
+                    text: qsTr("Device")
                 }
 
                 ComboBox {
@@ -404,11 +403,20 @@ ApplicationWindow {
                     }
                 }
 
-                RowLayout {
+                GridLayout {
+                    id: deviceActions
+                    objectName: "deviceActions"
+
                     Layout.fillWidth: true
-                    spacing: 8
+                    columnSpacing: 8
+                    rowSpacing: 8
+                    columns: refreshButton.implicitWidth + browseButton.implicitWidth + columnSpacing
+                        <= sourceLayout.width ? 2 : 1
 
                     ToolButton {
+                        id: refreshButton
+                        objectName: "refreshButton"
+
                         Layout.fillWidth: true
                         Layout.preferredHeight: implicitHeight
                         text: qsTr("REFRESH")
@@ -417,6 +425,9 @@ ApplicationWindow {
                     }
 
                     ToolButton {
+                        id: browseButton
+                        objectName: "browseButton"
+
                         Layout.fillWidth: true
                         Layout.preferredHeight: implicitHeight
                         text: qsTr("BROWSE...")
@@ -434,12 +445,14 @@ ApplicationWindow {
                     Layout.fillWidth: true
 
                     SectionLabel {
-                        text: qsTr("BOOKS")
+                        objectName: "booksLabel"
+                        text: qsTr("Books")
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
+                        objectName: "bookCount"
                         text: koboLibrary.books.length
                         color: Theme.textFaint
                         font.family: Theme.monoFont
@@ -750,11 +763,12 @@ ApplicationWindow {
                     id: copyFooter
                     objectName: "copyFooter"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.max(48,
-                        copyTextButton.height + 18,
-                        copyObsidianButton.height + 18,
-                        copyAllButton.height + 18)
-                    Layout.minimumHeight: Layout.preferredHeight
+                    implicitHeight: Math.max(48,
+                        copyTextButton.implicitHeight + 18,
+                        copyObsidianButton.implicitHeight + 18,
+                        copyAllButton.implicitHeight + 18)
+                    Layout.preferredHeight: implicitHeight
+                    Layout.minimumHeight: implicitHeight
                     color: Theme.panel
 
                     SeparatorLine {

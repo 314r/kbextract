@@ -36,6 +36,11 @@ jobs:
           version: 6.9.3
           arch: ${{ matrix.qt_arch }}
           cache: true
+          modules: qtshadertools
+
+      - name: Install Kirigami
+        shell: bash
+        run: cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON

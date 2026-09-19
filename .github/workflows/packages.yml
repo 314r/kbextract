@@ -67,6 +67,11 @@ jobs:
           version: 6.9.3
           arch: ${{ matrix.qt_arch }}
           cache: true
+          modules: qtshadertools
+
+      - name: Install Kirigami
+        shell: bash
+        run: cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
 
       - name: Configure
         shell: bash
@@ -108,6 +113,7 @@ jobs:
           test -f build/linux-package/kbextract.AppDir/usr/plugins/sqldrivers/libqsqlite.so
           test -f build/linux-package/kbextract.AppDir/usr/plugins/imageformats/libqsvg.so
           test -d build/linux-package/kbextract.AppDir/usr/qml/QtQuick
+          test -f build/linux-package/kbextract.AppDir/usr/qml/org/kde/kirigami/qmldir
 
           appimage_status=0
           timeout 5s env APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen \
