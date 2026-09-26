@@ -5,6 +5,7 @@
 #include <QFontInfo>
 #include <QGuiApplication>
 #include <QPalette>
+#include <QScreen>
 #include <QStyleHints>
 
 namespace {
@@ -55,14 +56,25 @@ QFont SystemAppearance::fixedFont() const
     return m_fixedFont;
 }
 
-qreal SystemAppearance::uiFontPointSize() const
+qreal SystemAppearance::resolvedPointSize(const QFont &font)
 {
-    const qreal resolved = QFontInfo(m_uiFont).pointSizeF();
+    const qreal resolved = QFontInfo(font).pointSizeF();
     if (resolved > 0.0)
         return resolved;
-    if (m_uiFont.pointSizeF() > 0.0)
-        return m_uiFont.pointSizeF();
+    if (font.pointSizeF() > 0.0)
+        return font.pointSizeF();
+    if (font.pixelSize() > 0) {
+        qreal dpi = 96.0;
+        if (qGuiApp && qGuiApp->primaryScreen() && qGuiApp->primaryScreen()->logicalDotsPerInchY() > 0.0)
+            dpi = qGuiApp->primaryScreen()->logicalDotsPerInchY();
+        return font.pixelSize() * 72.0 / dpi;
+    }
     return 9.0;
+}
+
+qreal SystemAppearance::uiFontPointSize() const
+{
+    return resolvedPointSize(m_uiFont);
 }
 
 bool SystemAppearance::dark() const

@@ -126,6 +126,41 @@ jobs:
       - name: Build
         run: cmake --build build --parallel --config Release
 
+      - name: Provide Qt fonts
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # This Qt build loads fonts only from its lib/fonts directory. Without
+          # them every glyph is one em wide and QFontInfo reports a negative size.
+          font_dir="${QT_ROOT_DIR}/lib/fonts"
+          mkdir -p "$font_dir"
+          win_fonts="${SYSTEMROOT:-C:/Windows}"
+          win_fonts="${win_fonts//\\//}/Fonts"
+          copied=0
+          for name in segoeui.ttf segoeuib.ttf segoeuii.ttf segoeuiz.ttf \
+                      consolas.ttf consola.ttf cour.ttf ariali.ttf \
+                      arial.ttf arialbd.ttf; do
+            if [[ -f "${win_fonts}/${name}" ]]; then
+              cp -f "${win_fonts}/${name}" "${font_dir}/"
+              copied=$((copied + 1))
+            fi
+          done
+          if (( copied == 0 )); then
+            shopt -s nullglob nocaseglob
+            for file in "${win_fonts}"/*.ttf; do
+              cp -f "$file" "${font_dir}/"
+              copied=$((copied + 1))
+              if (( copied >= 8 )); then
+                break
+              fi
+            done
+          fi
+          if (( copied == 0 )); then
+            echo "No Windows fonts were copied into ${font_dir}" >&2
+            exit 1
+          fi
+          echo "Copied ${copied} fonts into ${font_dir}"
+
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 

@@ -42,6 +42,22 @@ QString deviceDatabasePath(const QVariantMap &device)
     return device.value(QStringLiteral("databasePath")).toString();
 }
 
+QString databasePathKey(const QString &path)
+{
+#ifdef Q_OS_WIN
+    // Identity is case-insensitive, but the stored path keeps Qt's canonical
+    // spelling. Folding only the comparison key avoids rewriting that spelling.
+    return path.toCaseFolded();
+#else
+    return path;
+#endif
+}
+
+bool sameDatabasePath(const QString &left, const QString &right)
+{
+    return databasePathKey(left) == databasePathKey(right);
+}
+
 QString koboReaderConfPath(const QString &databasePath)
 {
     const QDir databaseDirectory = QFileInfo(databasePath).dir();
@@ -272,7 +288,7 @@ void KoboLibrary::setCurrentDeviceIndex(int index)
     if (indexChanged)
         emit currentDeviceIndexChanged();
 
-    if (normalizedDatabasePath(oldPath) != normalizedDatabasePath(newPath) || !m_database.isOpen())
+    if (!sameDatabasePath(normalizedDatabasePath(oldPath), normalizedDatabasePath(newPath)) || !m_database.isOpen())
         loadCurrentDatabase();
 }
 
@@ -592,7 +608,7 @@ bool KoboLibrary::addDatabase(const QString &databasePath)
     }
 
     for (int index = 0; index < m_devices.size(); ++index) {
-        if (normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())) == normalizedPath) {
+        if (sameDatabasePath(normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())), normalizedPath)) {
             setCurrentDeviceIndex(index);
             return m_currentLoadSucceeded;
         }
@@ -600,7 +616,7 @@ bool KoboLibrary::addDatabase(const QString &databasePath)
 
     bool isAlreadyManual = false;
     for (const QVariant &deviceValue : std::as_const(m_manualDevices)) {
-        if (normalizedDatabasePath(deviceDatabasePath(deviceValue.toMap())) == normalizedPath) {
+        if (sameDatabasePath(normalizedDatabasePath(deviceDatabasePath(deviceValue.toMap())), normalizedPath)) {
             isAlreadyManual = true;
             break;
         }
@@ -620,9 +636,10 @@ QVariantList KoboLibrary::discoveredDevices() const
 
     const auto appendDevice = [this, &devices, &seenPaths](const QVariantMap &device) {
         const QString path = normalizedDatabasePath(deviceDatabasePath(device));
-        if (path.isEmpty() || seenPaths.contains(path))
+        const QString pathKey = databasePathKey(path);
+        if (path.isEmpty() || seenPaths.contains(pathKey))
             return;
-        seenPaths.insert(path);
+        seenPaths.insert(pathKey);
         devices.append(device);
     };
 
@@ -672,7 +689,7 @@ QVariantList KoboLibrary::discoveredDevices() const
             const bool sameSerial = !library.serial.isEmpty()
                 && device.value(QStringLiteral("serial")).toString() == library.serial;
             const bool samePath = !savedPath.isEmpty()
-                && normalizedDatabasePath(deviceDatabasePath(device)) == savedPath;
+                && sameDatabasePath(normalizedDatabasePath(deviceDatabasePath(device)), savedPath);
             if (sameKey || sameSerial || samePath) {
                 covered = true;
                 break;
@@ -735,7 +752,7 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
     int selectedIndex = -1;
     if (!targetPath.isEmpty()) {
         for (int index = 0; index < m_devices.size(); ++index) {
-            if (normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())) == targetPath) {
+            if (sameDatabasePath(normalizedDatabasePath(deviceDatabasePath(m_devices.at(index).toMap())), targetPath)) {
                 selectedIndex = index;
                 break;
             }
@@ -781,7 +798,7 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
     const QString selectedPath = normalizedDatabasePath(deviceDatabasePath(selected));
     const QString selectedKey = selected.value(QStringLiteral("deviceKey")).toString();
     const bool selectedSaved = selected.value(QStringLiteral("saved")).toBool();
-    if (selectedPath == normalizedDatabasePath(m_pendingDatabasePath))
+    if (sameDatabasePath(selectedPath, normalizedDatabasePath(m_pendingDatabasePath)))
         m_pendingDatabasePath.clear();
 
     const bool indexChanged = m_currentDeviceIndex != selectedIndex;
@@ -951,7 +968,7 @@ bool KoboLibrary::snapshotOtherLiveDevices(const QString &currentDatabasePath)
         if (device.value(QStringLiteral("saved")).toBool())
             continue;
         const QString databasePath = normalizedDatabasePath(deviceDatabasePath(device));
-        if (!skipPath.isEmpty() && databasePath == skipPath)
+        if (!skipPath.isEmpty() && sameDatabasePath(databasePath, skipPath))
             continue;
         QString error;
         if (!snapshotDevice(device, &error)) {
@@ -1084,10 +1101,22 @@ void KoboLibrary::setStatusText(const QString &statusText)
 
 QString KoboLibrary::normalizedDatabasePath(const QString &databasePath) const
 {
-    QString path = databasePath.trimmed();
+    const QString path = databasePath.trimmed();
     if (path.isEmpty())
         return {};
 
+#ifdef Q_OS_WIN
+    // QFileInfo::canonicalFilePath() keeps the caller's casing. Rewriting \\?\,
+    // 8.3 names, or case makes that round-trip differ from the fixture path.
+    // Case-insensitive identity is handled by sameDatabasePath, not by storing
+    // a folded key. Linux and macOS keep the cleaned canonical path below.
+    const QFileInfo windowsInfo(path);
+    const QString windowsCanonical = windowsInfo.canonicalFilePath();
+    if (!windowsCanonical.isEmpty())
+        return windowsCanonical;
+    const QString windowsAbsolute = windowsInfo.absoluteFilePath();
+    return windowsAbsolute.isEmpty() ? QDir::cleanPath(path) : windowsAbsolute;
+#else
     const auto stripExtendedPrefix = [](QString value) {
         if (value.startsWith(QLatin1String("\\\\?\\UNC\\")))
             return QLatin1String("\\\\") + value.mid(8);
@@ -1100,20 +1129,14 @@ QString KoboLibrary::normalizedDatabasePath(const QString &databasePath) const
         return value;
     };
 
-    // GetFinalPathNameByHandle can prefix \\?\, and a short 8.3 temp path does
-    // not match its long form. One cleaned path is the device key.
-    path = QDir::fromNativeSeparators(stripExtendedPrefix(path));
-    const QFileInfo databaseInfo(path);
+    QString cleaned = QDir::fromNativeSeparators(stripExtendedPrefix(path));
+    const QFileInfo databaseInfo(cleaned);
     const QString canonicalPath = databaseInfo.canonicalFilePath();
-    path = QDir::cleanPath(canonicalPath.isEmpty()
-                               ? databaseInfo.absoluteFilePath()
-                               : QDir::fromNativeSeparators(stripExtendedPrefix(canonicalPath)));
-    path = QDir::fromNativeSeparators(stripExtendedPrefix(path));
-#ifdef Q_OS_WIN
-    // NTFS lookups are case-insensitive. Fold so C:\Temp and c:\temp are one library.
-    path = path.toCaseFolded();
+    cleaned = QDir::cleanPath(canonicalPath.isEmpty()
+                                  ? databaseInfo.absoluteFilePath()
+                                  : QDir::fromNativeSeparators(stripExtendedPrefix(canonicalPath)));
+    return QDir::fromNativeSeparators(stripExtendedPrefix(cleaned));
 #endif
-    return path;
 }
 
 QVariantMap KoboLibrary::manualDevice(const QString &databasePath) const

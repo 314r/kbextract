@@ -3,7 +3,6 @@
 #include <QColor>
 #include <QFont>
 #include <QFontDatabase>
-#include <QFontInfo>
 #include <QGuiApplication>
 #include <QPalette>
 
@@ -68,8 +67,7 @@ void SystemAppearanceTest::followsApplicationFontChanges()
 
     QTRY_COMPARE(appearance.uiFont().family(), QGuiApplication::font().family());
     QTRY_COMPARE(appearance.uiFont().pointSizeF(), QGuiApplication::font().pointSizeF());
-    const qreal resolved = QFontInfo(QGuiApplication::font()).pointSizeF();
-    QTRY_COMPARE(appearance.uiFontPointSize(), resolved > 0.0 ? resolved : changed.pointSizeF());
+    QTRY_COMPARE(appearance.uiFontPointSize(), SystemAppearance::resolvedPointSize(QGuiApplication::font()));
     QVERIFY(!fontsChanged.isEmpty());
 }
 

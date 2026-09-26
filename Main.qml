@@ -304,14 +304,15 @@ ApplicationWindow {
 
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    // Windows fonts can make "No Kobo device" wider than the 16px
-                    // sidebar padding. Bleed into that padding, then drop the label
-                    // inset, so the text still fits at 200% without clipping.
+                    // Windows fonts can make "No Kobo device" wider than the column.
+                    // Bleed through the full 16px sidebar margin, then drop the label
+                    // inset, so the text still fits at 200% without leaving the sidebar.
+                    readonly property real sidebarMargin: 16
                     readonly property real indicatorGap: 2
                     readonly property real textWidth: contentItem.implicitWidth
                     readonly property real hostWidth: parent.width
                     readonly property real neededWidth: textWidth + indicator.implicitWidth + indicatorGap
-                    readonly property real bleed: Math.min(12, Math.max(0, Math.ceil((neededWidth - hostWidth) / 2)))
+                    readonly property real bleed: Math.min(sidebarMargin, Math.max(0, Math.ceil((neededWidth - hostWidth) / 2)))
                     readonly property real boxWidth: Math.max(0, hostWidth + 2 * bleed)
                     readonly property real fittedLabelInset: boxWidth <= 0 ? 0 : Math.max(0,
                         (boxWidth - textWidth - indicator.implicitWidth - indicatorGap) / 2)

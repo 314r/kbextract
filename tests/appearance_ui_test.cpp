@@ -4,7 +4,6 @@
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
-#include <QFontInfo>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -505,7 +504,7 @@ void AppearanceUiTest::desktopFontChangesUpdateTypography()
     QFont larger = QGuiApplication::font();
     larger.setPointSizeF(18.0);
     QGuiApplication::setFont(larger);
-    const qreal resolvedSize = QFontInfo(QGuiApplication::font()).pointSizeF();
+    const qreal resolvedSize = SystemAppearance::resolvedPointSize(QGuiApplication::font());
     QTRY_COMPARE(m_theme->property("systemFontPointSize").toReal(), resolvedSize);
     const QList<qreal> expectedSizes{
         resolvedSize * 10.0 / 12.0,
@@ -530,7 +529,7 @@ void AppearanceUiTest::desktopFontChangesUpdateTypography()
     different.setPointSizeF(16.0);
     QGuiApplication::setFont(different);
     QTRY_COMPARE(m_theme->property("uiFont").toString(), QGuiApplication::font().family());
-    const qreal differentSize = QFontInfo(QGuiApplication::font()).pointSizeF();
+    const qreal differentSize = SystemAppearance::resolvedPointSize(QGuiApplication::font());
     QTRY_COMPARE(m_theme->property("systemFontPointSize").toReal(), differentSize);
     QCOMPARE(control("themeSelector")->property("font").value<QFont>().family(),
              QGuiApplication::font().family());
@@ -731,7 +730,7 @@ void AppearanceUiTest::chromeFollowsBodyMetricsAndFitsSidebar()
     QFont fixture = QGuiApplication::font();
     fixture.setPointSizeF(11.0);
     QGuiApplication::setFont(fixture);
-    const qreal resolvedSize = QFontInfo(QGuiApplication::font()).pointSizeF();
+    const qreal resolvedSize = SystemAppearance::resolvedPointSize(QGuiApplication::font());
     QTRY_COMPARE(m_theme->property("systemFontPointSize").toReal(), resolvedSize);
 
     QObject *qmlMetrics = m_theme->property("bodyMetrics").value<QObject *>();

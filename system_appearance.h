@@ -24,6 +24,10 @@ public:
     qreal uiFontPointSize() const;
     bool dark() const;
 
+    // QFontInfo reports a negative size when the font is pixel-sized or has no
+    // matching face. Callers that paint with a point size use this instead.
+    static qreal resolvedPointSize(const QFont &font);
+
     static QVariantMap paletteFrom(const QPalette &palette, bool dark);
 
     Q_INVOKABLE void reload();
