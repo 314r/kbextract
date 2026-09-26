@@ -303,7 +303,15 @@ void MacUiTest::sidebarAndMinimumWindow()
     for (const auto *name : {"copyTextButton", "copyObsidianButton", "copyAllButton", "deviceSelector"}) {
         auto *control = item(name);
         const QRectF bounds(control->mapToScene(QPointF()), control->size());
-        QVERIFY(QRectF(0, 0, m_window->width(), m_window->height()).contains(bounds));
+        QVERIFY2(QRectF(0, 0, m_window->width(), m_window->height()).contains(bounds),
+                 qPrintable(QStringLiteral("%1 is outside the window: %2,%3 %4x%5; window %6x%7")
+                                .arg(QString::fromLatin1(name))
+                                .arg(bounds.x())
+                                .arg(bounds.y())
+                                .arg(bounds.width())
+                                .arg(bounds.height())
+                                .arg(m_window->width())
+                                .arg(m_window->height())));
     }
     // Drag the real split handle to both limits, then verify the persisted size.
     auto *sidebar = item("sidebar");

@@ -303,12 +303,22 @@ ApplicationWindow {
                     objectName: "deviceSelector"
 
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     implicitHeight: Math.max(Theme.controlMinHeight,
                         Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
                         + topPadding + bottomPadding)
                     height: implicitHeight
-                    leftPadding: Theme.controlHorizontalPadding
-                    rightPadding: Theme.controlHorizontalPadding + indicator.implicitWidth + spacing
+                    // The 246px sidebar leaves about 214px for this combo. At 200% the
+                    // linux font metrics for "No Kobo device" exceed a full character
+                    // of padding on each side, so shrink the label inset until the
+                    // text fits and keep at least 4px clear of the indicator.
+                    readonly property real indicatorGap: 4
+                    readonly property real fittedLabelInset: Math.max(2,
+                        (width - contentItem.implicitWidth - indicator.implicitWidth - indicatorGap) / 2)
+                    readonly property real labelInset: Math.min(Theme.controlHorizontalPadding, fittedLabelInset)
+                    leftPadding: labelInset
+                    rightPadding: labelInset + indicator.implicitWidth
+                    spacing: 0
                     verticalPadding: Theme.controlVerticalPadding
                     model: koboLibrary.devices
                     textRole: "displayName"
@@ -353,7 +363,7 @@ ApplicationWindow {
                     }
 
                     indicator: Text {
-                        x: deviceSelector.width - width - Theme.controlHorizontalPadding
+                        x: deviceSelector.width - width - deviceSelector.labelInset
                         y: (deviceSelector.height - height) / 2
                         text: qsTr("v")
                         color: deviceSelector.enabled ? Theme.textMuted : Theme.textFaint

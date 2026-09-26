@@ -72,6 +72,10 @@ private:
     QVariantList discoveredDevices() const;
     void clearDeviceSelection(const QString &statusText);
     bool loadCurrentDatabase();
+    bool snapshotOtherLiveDevices(const QString &currentDatabasePath);
+    bool snapshotDevice(const QVariantMap &device, QString *error);
+    bool readAnnotatedBooks(QSqlDatabase &database, QVariantList *books, QList<StoredBook> *storedBooks, QString *error);
+    StoredLibrary libraryRecordForDevice(const QVariantMap &device) const;
     void closeDatabase();
     void setBooks(QVariantList books);
     void clearCurrentBook();
@@ -86,7 +90,8 @@ private:
     QVariantMap savedDevice(const StoredLibrary &library) const;
     QString savedStatusText(const QString &libraryName) const;
     bool showSavedLibrary(const QVariantMap &device);
-    bool loadResolvedAnnotations(const QString &volumeId, QList<StoredAnnotation> *annotations, QString *error);
+    bool loadResolvedAnnotations(QSqlDatabase &database, const QString &volumeId, QList<StoredAnnotation> *annotations,
+                                 QString *error);
     void formatAnnotations(const QList<StoredAnnotation> &annotations, QString *markdown, QString *obsidianMarkdown,
                            QString *plainText) const;
 

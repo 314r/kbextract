@@ -11,9 +11,12 @@ Button {
         normalWidthProbe.implicitWidth, confirmationWidthProbe.implicitWidth))
 
     text: confirmed ? confirmationText : label
-    Layout.minimumWidth: fixedWidth
+    // Preferred and maximum stay on the wider probe so "COPIED" does not resize
+    // the button. minimumWidth can shrink when cocoa metrics exceed the footer.
+    Layout.minimumWidth: 0
     Layout.preferredWidth: fixedWidth
     Layout.maximumWidth: fixedWidth
+    Layout.fillWidth: false
     Accessible.name: action ? action.text : label
 
     // Native styles can include the current label in their background metrics.

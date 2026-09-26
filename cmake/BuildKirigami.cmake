@@ -12,6 +12,15 @@ function(run)
     execute_process(COMMAND ${ARGV} COMMAND_ERROR_IS_FATAL ANY)
 endfunction()
 
+# Git for Windows ships an MSYS tar ahead of System32 on PATH. That tar treats
+# "D:" in a Windows path as a hostname, so extracting templates/kirigami6.tar.bz2
+# fails with "Cannot connect to D:". Windows tar must come first. Keep CC/CXX
+# (MSVC cl on CI) unchanged.
+if(WIN32)
+    set(_kbextract_system32 "$ENV{SystemRoot}/System32")
+    set(ENV{PATH} "${_kbextract_system32};$ENV{PATH}")
+endif()
+
 set(version 6.13.0)
 # Honor CC/CXX from the environment. On Windows CI this is cl, so Ninja does
 # not probe MinGW's cc.exe and link it against the MSVC Qt libraries.

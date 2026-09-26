@@ -85,7 +85,16 @@ jobs:
               $name = $Matches[1]
               $value = $Matches[2]
               if ($name -eq 'PATH') {
-                $value = (($value -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)mingw') }) -join ';'
+                # System32 tar must precede Git usr\bin. MSYS tar treats "D:" as a host.
+                $system32 = Join-Path $env:SystemRoot 'System32'
+                $parts = @($system32)
+                foreach ($entry in ($value -split ';')) {
+                  if (-not $entry) { continue }
+                  if ($entry -match '(?i)mingw') { continue }
+                  if ($entry -ieq $system32) { continue }
+                  $parts += $entry
+                }
+                $value = $parts -join ';'
               }
               Add-Content -Path $env:GITHUB_ENV -Value "$name=$value" -Encoding utf8NoBOM
             }
@@ -95,11 +104,24 @@ jobs:
 
       - name: Install Kirigami
         shell: bash
-        run: cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            # Git bash puts usr/bin ahead of the PATH set above. MSYS tar treats "D:" as a host.
+            win_system32="${SYSTEMROOT:-C:/Windows}"
+            win_system32="${win_system32//\\//}/System32"
+            export PATH="${win_system32}:${PATH}"
+          fi
+          cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
 
       - name: Configure
         shell: bash
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DKBEXTRACT_PACKAGE_VERSION="$PACKAGE_VERSION"
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            win_system32="${SYSTEMROOT:-C:/Windows}"
+            win_system32="${win_system32//\\//}/System32"
+            export PATH="${win_system32}:${PATH}"
+          fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DKBEXTRACT_PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Build
         run: cmake --build build --parallel --config Release

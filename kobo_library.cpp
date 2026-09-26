@@ -291,7 +291,7 @@ void KoboLibrary::setCurrentBookIndex(int index)
     QList<StoredAnnotation> annotations;
     QString error;
     if (m_database.isOpen()) {
-        if (!loadResolvedAnnotations(volumeId, &annotations, &error)) {
+        if (!loadResolvedAnnotations(m_database, volumeId, &annotations, &error)) {
             setCurrentBookState(index, title, author, {}, {}, {}, error);
             return;
         }
@@ -318,7 +318,8 @@ void KoboLibrary::setCurrentBookIndex(int index)
     setCurrentBookState(index, title, author, markdown, obsidianMarkdown, plainText, annotationStatus);
 }
 
-bool KoboLibrary::loadResolvedAnnotations(const QString &volumeId, QList<StoredAnnotation> *annotations, QString *error)
+bool KoboLibrary::loadResolvedAnnotations(QSqlDatabase &database, const QString &volumeId,
+                                         QList<StoredAnnotation> *annotations, QString *error)
 {
     annotations->clear();
 
@@ -340,7 +341,7 @@ bool KoboLibrary::loadResolvedAnnotations(const QString &volumeId, QList<StoredA
                  navigation.ContentID COLLATE NOCASE
     )SQL");
 
-    QSqlQuery kepubChapterQuery(m_database);
+    QSqlQuery kepubChapterQuery(database);
     kepubChapterQuery.setForwardOnly(true);
     if (!kepubChapterQuery.prepare(kepubChapterQueryText)) {
         if (error)
@@ -415,7 +416,7 @@ bool KoboLibrary::loadResolvedAnnotations(const QString &volumeId, QList<StoredA
                  bm.BookmarkID COLLATE NOCASE
     )SQL");
 
-    QSqlQuery query(m_database);
+    QSqlQuery query(database);
     query.setForwardOnly(true);
     if (!query.prepare(queryText)) {
         if (error)
@@ -707,10 +708,15 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
     const QVariantList devices = discoveredDevices();
 
     if (devices == m_devices) {
-        if (forceReload && m_currentDeviceIndex >= 0)
+        if (forceReload && m_currentDeviceIndex >= 0) {
+            const QVariantMap current = m_devices.at(m_currentDeviceIndex).toMap();
+            snapshotOtherLiveDevices(current.value(QStringLiteral("saved")).toBool()
+                                         ? QString()
+                                         : deviceDatabasePath(current));
             loadCurrentDatabase();
-        else if (forceReload && m_currentDeviceIndex < 0 && m_pendingDatabasePath.isEmpty())
+        } else if (forceReload && m_currentDeviceIndex < 0 && m_pendingDatabasePath.isEmpty()) {
             setStatusText(tr("Connect a Kobo or choose KoboReader.sqlite."));
+        }
         return;
     }
 
@@ -783,14 +789,23 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
     // The live book list was just synced. Keep it, and the open text, when the
     // volume disappears and the same device's snapshot takes its place.
     if (selectedSaved && !oldSaved && selectedKey == oldKey && !selectedKey.isEmpty()) {
+        snapshotOtherLiveDevices({});
         closeDatabase();
         m_annotationStore.markLastOpened(selectedKey);
         setStatusText(savedStatusText(selected.value(QStringLiteral("libraryName")).toString()));
         return;
     }
 
-    if (forceReload || oldPath != selectedPath || oldKey != selectedKey || selectedSaved != oldSaved || !m_database.isOpen())
+    if (forceReload || oldPath != selectedPath || oldKey != selectedKey || selectedSaved != oldSaved || !m_database.isOpen()) {
+        snapshotOtherLiveDevices(selectedSaved ? QString() : selectedPath);
         loadCurrentDatabase();
+    } else {
+        // A newly connected device is snapshotted here without reloading the
+        // open book or moving the selection.
+        snapshotOtherLiveDevices(selectedPath);
+        if (!selectedKey.isEmpty())
+            m_annotationStore.markLastOpened(selectedKey);
+    }
 }
 
 void KoboLibrary::clearDeviceSelection(const QString &statusText)
@@ -803,6 +818,142 @@ void KoboLibrary::clearDeviceSelection(const QString &statusText)
     setStatusText(statusText);
     if (indexChanged)
         emit currentDeviceIndexChanged();
+}
+
+StoredLibrary KoboLibrary::libraryRecordForDevice(const QVariantMap &device) const
+{
+    const QString displayName = device.value(QStringLiteral("libraryName")).toString().isEmpty()
+        ? device.value(QStringLiteral("displayName")).toString()
+        : device.value(QStringLiteral("libraryName")).toString();
+    StoredLibrary snapshot;
+    snapshot.deviceKey = device.value(QStringLiteral("deviceKey")).toString();
+    snapshot.displayName = displayName;
+    snapshot.serial = device.value(QStringLiteral("serial")).toString();
+    snapshot.databasePath = normalizedDatabasePath(deviceDatabasePath(device));
+    if (snapshot.deviceKey.isEmpty())
+        snapshot.deviceKey = snapshot.serial.isEmpty() ? snapshot.databasePath : snapshot.serial;
+    return snapshot;
+}
+
+bool KoboLibrary::readAnnotatedBooks(QSqlDatabase &database, QVariantList *books, QList<StoredBook> *storedBooks,
+                                     QString *error)
+{
+    books->clear();
+    storedBooks->clear();
+
+    static const QString queryText = QStringLiteral(R"SQL(
+        SELECT
+            bm.VolumeID AS volume_id,
+            COALESCE(MAX(NULLIF(TRIM(c.Title), '')), bm.VolumeID) AS title,
+            COALESCE(MAX(NULLIF(TRIM(c.Attribution), '')), '') AS author,
+            SUM(CASE
+                WHEN NULLIF(TRIM(COALESCE(bm.Text, '')), '') IS NOT NULL
+                 AND NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NULL
+                THEN 1 ELSE 0 END) AS highlight_count,
+            SUM(CASE
+                WHEN NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NOT NULL
+                THEN 1 ELSE 0 END) AS note_count
+        FROM Bookmark bm
+        LEFT JOIN content c
+               ON c.ContentID = bm.VolumeID
+              AND c.BookID IS NULL
+        WHERE bm.VolumeID IS NOT NULL
+          AND TRIM(CAST(bm.VolumeID AS TEXT)) <> ''
+          AND LOWER(COALESCE(CAST(bm.Hidden AS TEXT), 'false')) IN ('false', '0')
+          AND NOT (
+              COALESCE(bm.StartContainerChildIndex, 0) = 0
+              AND COALESCE(bm.StartOffset, 0) = 0
+          )
+          AND (
+              NULLIF(TRIM(COALESCE(bm.Text, '')), '') IS NOT NULL
+              OR NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NOT NULL
+          )
+        GROUP BY bm.VolumeID
+        HAVING highlight_count > 0 OR note_count > 0
+        ORDER BY title COLLATE NOCASE, author COLLATE NOCASE
+    )SQL");
+
+    QSqlQuery query(database);
+    query.setForwardOnly(true);
+    if (!query.exec(queryText)) {
+        if (error)
+            *error = tr("Could not read Kobo highlights: %1").arg(query.lastError().text());
+        return false;
+    }
+
+    while (query.next()) {
+        books->append(QVariantMap{
+            {QStringLiteral("volumeId"), query.value(QStringLiteral("volume_id"))},
+            {QStringLiteral("title"), query.value(QStringLiteral("title"))},
+            {QStringLiteral("author"), query.value(QStringLiteral("author"))},
+            {QStringLiteral("highlightCount"), query.value(QStringLiteral("highlight_count"))},
+            {QStringLiteral("noteCount"), query.value(QStringLiteral("note_count"))},
+        });
+    }
+
+    storedBooks->reserve(books->size());
+    for (const QVariant &bookValue : std::as_const(*books)) {
+        const QVariantMap book = bookValue.toMap();
+        StoredBook storedBook;
+        storedBook.volumeId = book.value(QStringLiteral("volumeId")).toString();
+        storedBook.title = book.value(QStringLiteral("title")).toString();
+        storedBook.author = book.value(QStringLiteral("author")).toString();
+        storedBook.highlightCount = book.value(QStringLiteral("highlightCount")).toInt();
+        storedBook.noteCount = book.value(QStringLiteral("noteCount")).toInt();
+        if (!loadResolvedAnnotations(database, storedBook.volumeId, &storedBook.annotations, error))
+            return false;
+        storedBooks->append(std::move(storedBook));
+    }
+    return true;
+}
+
+bool KoboLibrary::snapshotDevice(const QVariantMap &device, QString *error)
+{
+    const QString connectionName = m_connectionName + QStringLiteral("-snapshot-")
+        + QUuid::createUuid().toString(QUuid::Id128);
+    bool saved = false;
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        database.setDatabaseName(deviceDatabasePath(device));
+        if (!database.open()) {
+            if (error)
+                *error = tr("Could not open the Kobo database: %1").arg(database.lastError().text());
+        } else {
+            QVariantList books;
+            QList<StoredBook> storedBooks;
+            if (!readAnnotatedBooks(database, &books, &storedBooks, error)) {
+                // error already set
+            } else if (!m_annotationStore.replaceLibrary(libraryRecordForDevice(device), storedBooks)) {
+                if (error)
+                    *error = tr("Could not save the highlight library: %1").arg(m_annotationStore.lastError());
+            } else {
+                saved = true;
+            }
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return saved;
+}
+
+bool KoboLibrary::snapshotOtherLiveDevices(const QString &currentDatabasePath)
+{
+    const QString skipPath = normalizedDatabasePath(currentDatabasePath);
+    for (const QVariant &deviceValue : std::as_const(m_devices)) {
+        const QVariantMap device = deviceValue.toMap();
+        if (device.value(QStringLiteral("saved")).toBool())
+            continue;
+        const QString databasePath = normalizedDatabasePath(deviceDatabasePath(device));
+        if (!skipPath.isEmpty() && databasePath == skipPath)
+            continue;
+        QString error;
+        if (!snapshotDevice(device, &error)) {
+            setStatusText(error);
+            return false;
+        }
+    }
+    return true;
 }
 
 bool KoboLibrary::loadCurrentDatabase()
@@ -837,85 +988,18 @@ bool KoboLibrary::loadCurrentDatabase()
         return false;
     }
 
-    static const QString queryText = QStringLiteral(R"SQL(
-        SELECT
-            bm.VolumeID AS volume_id,
-            COALESCE(MAX(NULLIF(TRIM(c.Title), '')), bm.VolumeID) AS title,
-            COALESCE(MAX(NULLIF(TRIM(c.Attribution), '')), '') AS author,
-            SUM(CASE
-                WHEN NULLIF(TRIM(COALESCE(bm.Text, '')), '') IS NOT NULL
-                 AND NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NULL
-                THEN 1 ELSE 0 END) AS highlight_count,
-            SUM(CASE
-                WHEN NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NOT NULL
-                THEN 1 ELSE 0 END) AS note_count
-        FROM Bookmark bm
-        LEFT JOIN content c
-               ON c.ContentID = bm.VolumeID
-              AND c.BookID IS NULL
-        WHERE bm.VolumeID IS NOT NULL
-          AND TRIM(CAST(bm.VolumeID AS TEXT)) <> ''
-          AND LOWER(COALESCE(CAST(bm.Hidden AS TEXT), 'false')) IN ('false', '0')
-          AND NOT (
-              COALESCE(bm.StartContainerChildIndex, 0) = 0
-              AND COALESCE(bm.StartOffset, 0) = 0
-          )
-          AND (
-              NULLIF(TRIM(COALESCE(bm.Text, '')), '') IS NOT NULL
-              OR NULLIF(TRIM(COALESCE(bm.Annotation, '')), '') IS NOT NULL
-          )
-        GROUP BY bm.VolumeID
-        HAVING highlight_count > 0 OR note_count > 0
-        ORDER BY title COLLATE NOCASE, author COLLATE NOCASE
-    )SQL");
-
-    QSqlQuery query(m_database);
-    query.setForwardOnly(true);
-    if (!query.exec(queryText)) {
-        setStatusText(tr("Could not read Kobo highlights: %1").arg(query.lastError().text()));
+    QVariantList books;
+    QList<StoredBook> storedBooks;
+    QString readError;
+    if (!readAnnotatedBooks(m_database, &books, &storedBooks, &readError)) {
+        setStatusText(readError);
         return false;
     }
 
-    QVariantList books;
-    while (query.next()) {
-        books.append(QVariantMap{
-            {QStringLiteral("volumeId"), query.value(QStringLiteral("volume_id"))},
-            {QStringLiteral("title"), query.value(QStringLiteral("title"))},
-            {QStringLiteral("author"), query.value(QStringLiteral("author"))},
-            {QStringLiteral("highlightCount"), query.value(QStringLiteral("highlight_count"))},
-            {QStringLiteral("noteCount"), query.value(QStringLiteral("note_count"))},
-        });
-    }
-
-    QList<StoredBook> storedBooks;
-    storedBooks.reserve(books.size());
-    for (const QVariant &bookValue : books) {
-        const QVariantMap book = bookValue.toMap();
-        StoredBook storedBook;
-        storedBook.volumeId = book.value(QStringLiteral("volumeId")).toString();
-        storedBook.title = book.value(QStringLiteral("title")).toString();
-        storedBook.author = book.value(QStringLiteral("author")).toString();
-        storedBook.highlightCount = book.value(QStringLiteral("highlightCount")).toInt();
-        storedBook.noteCount = book.value(QStringLiteral("noteCount")).toInt();
-        QString annotationError;
-        if (!loadResolvedAnnotations(storedBook.volumeId, &storedBook.annotations, &annotationError)) {
-            setStatusText(annotationError);
-            return false;
-        }
-        storedBooks.append(std::move(storedBook));
-    }
-
-    StoredLibrary snapshot;
-    snapshot.deviceKey = device.value(QStringLiteral("deviceKey")).toString();
-    snapshot.displayName = displayName;
-    snapshot.serial = device.value(QStringLiteral("serial")).toString();
-    snapshot.databasePath = normalizedDatabasePath(databasePath);
-    if (snapshot.deviceKey.isEmpty())
-        snapshot.deviceKey = snapshot.serial.isEmpty() ? snapshot.databasePath : snapshot.serial;
-
     // Highlight sets are small, so the snapshot is written on this thread at the
-    // end of a successful read instead of on a second SQLite connection.
-    if (!m_annotationStore.replaceLibrary(snapshot, storedBooks)) {
+    // end of a successful read. Other connected devices were snapshotted first,
+    // on their own read-only connections, so this write keeps last_opened here.
+    if (!m_annotationStore.replaceLibrary(libraryRecordForDevice(device), storedBooks)) {
         setBooks(std::move(books));
         setStatusText(tr("Could not save the highlight library: %1").arg(m_annotationStore.lastError()));
         return false;
