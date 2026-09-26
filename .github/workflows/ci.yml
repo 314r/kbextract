@@ -16,7 +16,7 @@ jobs:
         include:
           - name: Linux x86-64
             runner: ubuntu-22.04
-            qt_arch: gcc_64
+            qt_arch: linux_gcc_64
           - name: Windows x64
             runner: windows-2022
             qt_arch: win64_msvc2022_64
@@ -37,6 +37,30 @@ jobs:
           arch: ${{ matrix.qt_arch }}
           cache: true
           modules: qtshadertools
+
+      # windows-2022 has MinGW on PATH. CMake's Ninja generator probes cc.exe
+      # before cl.exe, then links the MSVC Qt libraries with mingw ld.
+      - name: Select the MSVC toolchain
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (-not $install) { throw "MSVC toolchain not found" }
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          $captured = cmd.exe /d /c "call `"$vcvars`" >nul && set"
+          foreach ($line in $captured) {
+            if ($line -match '^(PATH|INCLUDE|LIB|LIBPATH)=(.*)$') {
+              $name = $Matches[1]
+              $value = $Matches[2]
+              if ($name -eq 'PATH') {
+                $value = (($value -split ';') | Where-Object { $_ -and ($_ -notmatch '(?i)mingw') }) -join ';'
+              }
+              Add-Content -Path $env:GITHUB_ENV -Value "$name=$value" -Encoding utf8NoBOM
+            }
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "CC=cl" -Encoding utf8NoBOM
+          Add-Content -Path $env:GITHUB_ENV -Value "CXX=cl" -Encoding utf8NoBOM
 
       - name: Install Kirigami
         shell: bash

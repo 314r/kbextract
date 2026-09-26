@@ -278,8 +278,12 @@ if(BUILD_TESTING)
             FILES MacMain.qml MacCopyButton.qml AppSession.qml AnnotationBody.qml Theme.qml
         )
         add_test(NAME mac_ui_tests COMMAND mac_ui_tests)
+        # Qt's macOS style paints NSViews and passes QWindow::winId() to
+        # -[NSView addSubview:]. The offscreen platform's first window id is 1,
+        # which AppKit messages as an NSDate (Intel) or faults on (Apple Silicon)
+        # while the window is first polished. Cocoa supplies a real NSView.
         set_tests_properties(mac_ui_tests PROPERTIES
-            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software"
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software"
         )
     endif()
 

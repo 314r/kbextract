@@ -145,10 +145,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 CI runs the suite on Linux x86-64, Windows x64, and both Apple Silicon and
-Intel macOS runners. Mac UI tests use isolated database fixtures and settings;
-the custom UI regression tests continue to run on all platforms. Native menus,
-file dialogs, VoiceOver, and live system appearance changes also require an
-interactive Mac check; offscreen tests do not verify their native rendering.
+Intel macOS runners. Mac UI tests use the cocoa platform, isolated database
+fixtures, and settings; the custom UI regression tests continue to run on all
+platforms. Native menus, file dialogs, VoiceOver, and live system appearance
+changes also require an interactive Mac check.
 
 ## Packages
 
