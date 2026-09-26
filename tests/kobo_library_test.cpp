@@ -131,6 +131,68 @@ int bookIndexWithVolumeId(const QVariantList &books, const QString &volumeId)
     return -1;
 }
 
+QString libraryStorePath(const QTemporaryDir &directory)
+{
+    return directory.filePath(QStringLiteral("library.sqlite"));
+}
+
+bool alterDatabase(const QString &path, const QStringList &statements)
+{
+    const QString connectionName = QStringLiteral("kbextract-test-alter-%1")
+                                       .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    bool succeeded = false;
+    {
+        QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        database.setDatabaseName(path);
+        succeeded = database.open();
+        for (const QString &statement : statements)
+            succeeded = succeeded && execute(database, statement);
+        database.close();
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+    return succeeded;
+}
+
+bool writeSerialNumber(const QString &databasePath, const QString &serial)
+{
+    const QDir databaseDirectory = QFileInfo(databasePath).dir();
+    if (databaseDirectory.dirName() != QLatin1String(".kobo"))
+        return false;
+    if (!QDir().mkpath(databaseDirectory.filePath(QStringLiteral("Kobo"))))
+        return false;
+
+    QFile conf(databaseDirectory.filePath(QStringLiteral("Kobo/Kobo eReader.conf")));
+    if (!conf.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    const QByteArray body = QStringLiteral("[DeviceInfo]\nSerialNumber=%1\n").arg(serial).toUtf8();
+    return conf.write(body) == body.size();
+}
+
+int deviceIndexForPath(const QVariantList &devices, const QString &databasePath)
+{
+    const QString canonicalPath = QFileInfo(databasePath).canonicalFilePath();
+    for (int index = 0; index < devices.size(); ++index) {
+        const QString candidate = QFileInfo(devices.at(index).toMap().value(QStringLiteral("databasePath")).toString()).canonicalFilePath();
+        if (!candidate.isEmpty() && candidate == canonicalPath)
+            return index;
+    }
+    return -1;
+}
+
+int deviceIndexForKey(const QVariantList &devices, const QString &deviceKey)
+{
+    for (int index = 0; index < devices.size(); ++index) {
+        if (devices.at(index).toMap().value(QStringLiteral("deviceKey")).toString() == deviceKey)
+            return index;
+    }
+    return -1;
+}
+
+QString mountedDatabasePath(const QString &mountPath)
+{
+    return QDir(mountPath).filePath(QStringLiteral(".kobo/KoboReader.sqlite"));
+}
+
 } // namespace
 
 class KoboLibraryTest : public QObject
@@ -148,6 +210,13 @@ private slots:
     void detectsMountedDeviceArrivalWithoutResettingSelection();
     void closesAndRestoresRemovedDevice();
     void hidesUnreadableManualDatabase();
+    void browsesSavedBooksAfterUnplug();
+    void dropsHighlightRemovedOnDevice();
+    void snapshotsStaySeparatePerSerial();
+    void syncLeavesDeviceDatabaseUnchanged();
+    void serialFollowsDeviceAcrossMounts();
+    void pathIdentityStartsNewLibraryWithoutSerial();
+    void selectsLastOpenedSavedLibrary();
 };
 
 void KoboLibraryTest::loadsAnnotatedBooks()
@@ -157,7 +226,7 @@ void KoboLibraryTest::loadsAnnotatedBooks()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
 
     const QVariantList books = library.books();
@@ -195,7 +264,7 @@ void KoboLibraryTest::formatsSelectedBookAsMarkdown()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
 
     const int alphaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha"));
@@ -271,7 +340,7 @@ void KoboLibraryTest::groupsSplitContentFilesUnderNavigationChapters()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
 
     const int bookIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-split"));
@@ -321,7 +390,7 @@ void KoboLibraryTest::clearsSelectedBookOnReload()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
     library.setCurrentBookIndex(0);
     QVERIFY(!library.currentBookMarkdown().isEmpty());
@@ -338,7 +407,7 @@ void KoboLibraryTest::rejectsMissingDatabase()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(!library.addDatabase(directory.filePath(QStringLiteral("missing.sqlite"))));
     QVERIFY(library.books().isEmpty());
     QVERIFY(library.statusText().contains(QStringLiteral("not a readable file")));
@@ -351,7 +420,7 @@ void KoboLibraryTest::reportsMalformedSchema()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath, false));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(!library.addDatabase(databasePath));
     QVERIFY(library.books().isEmpty());
     QVERIFY(library.statusText().contains(QStringLiteral("Could not read Kobo highlights")));
@@ -364,7 +433,7 @@ void KoboLibraryTest::deduplicatesManualDatabase()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library;
+    KoboLibrary library(libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
     QVERIFY(library.addDatabase(databasePath));
     QCOMPARE(devicePathOccurrences(library.devices(), databasePath), 1);
@@ -380,7 +449,7 @@ void KoboLibraryTest::detectsMountedDeviceArrivalWithoutResettingSelection()
     QVERIFY(createDatabase(databasePath));
 
     QList<KoboVolume> volumes;
-    KoboLibrary library([&volumes] { return volumes; }, 20);
+    KoboLibrary library([&volumes] { return volumes; }, 20, libraryStorePath(directory));
     library.refreshDevices();
     QCOMPARE(library.devices().size(), 0);
 
@@ -409,19 +478,31 @@ void KoboLibraryTest::closesAndRestoresRemovedDevice()
     QVERIFY(createDatabase(databasePath));
 
     QList<KoboVolume> volumes{{mountPath, QStringLiteral("Kobo Reader")}};
-    KoboLibrary library([&volumes] { return volumes; }, 20);
+    KoboLibrary library([&volumes] { return volumes; }, 20, libraryStorePath(directory));
     library.refreshDevices();
     QCOMPARE(library.currentDeviceIndex(), 0);
     QCOMPARE(library.books().size(), 4);
+    const int alphaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha"));
+    QVERIFY(alphaIndex >= 0);
+    library.setCurrentBookIndex(alphaIndex);
+    const QString markdown = library.currentBookMarkdown();
+    QVERIFY(!markdown.isEmpty());
 
     volumes.clear();
-    QTRY_COMPARE_WITH_TIMEOUT(library.currentDeviceIndex(), -1, 500);
-    QVERIFY(library.books().isEmpty());
-    QVERIFY(library.statusText().contains(QStringLiteral("no longer connected")));
+    QTRY_COMPARE_WITH_TIMEOUT(library.statusText(),
+                              QStringLiteral("Showing saved highlights from Kobo Reader. Connect the Kobo to update."),
+                              500);
+    QCOMPARE(library.currentDeviceIndex(), 0);
+    QCOMPARE(library.books().size(), 4);
+    QCOMPARE(library.currentBookMarkdown(), markdown);
+    QVERIFY(library.devices().at(0).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")));
 
     volumes.append(KoboVolume{mountPath, QStringLiteral("Kobo Reader")});
     QTRY_COMPARE_WITH_TIMEOUT(library.currentDeviceIndex(), 0, 500);
     QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+    QTRY_COMPARE_WITH_TIMEOUT(library.statusText(),
+                              QStringLiteral("Loaded 4 annotated books from Kobo Reader."),
+                              500);
 }
 
 void KoboLibraryTest::hidesUnreadableManualDatabase()
@@ -431,14 +512,329 @@ void KoboLibraryTest::hidesUnreadableManualDatabase()
     const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
     QVERIFY(createDatabase(databasePath));
 
-    KoboLibrary library([] { return QList<KoboVolume>(); }, 20);
+    KoboLibrary library([] { return QList<KoboVolume>(); }, 20, libraryStorePath(directory));
     QVERIFY(library.addDatabase(databasePath));
     QCOMPARE(library.devices().size(), 1);
+    const int alphaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha"));
+    QVERIFY(alphaIndex >= 0);
+    library.setCurrentBookIndex(alphaIndex);
+    const QString markdown = library.currentBookMarkdown();
+    QVERIFY(!markdown.isEmpty());
 
-    library.setCurrentDeviceIndex(-1);
     QVERIFY(QFile::remove(databasePath));
-    QTRY_COMPARE_WITH_TIMEOUT(library.devices().size(), 0, 500);
-    QCOMPARE(library.currentDeviceIndex(), -1);
+    QTRY_VERIFY_WITH_TIMEOUT(library.devices().size() == 1
+                             && library.devices().at(0).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")),
+                             500);
+    QCOMPARE(library.currentDeviceIndex(), 0);
+    QCOMPARE(library.books().size(), 4);
+    QCOMPARE(library.currentBookMarkdown(), markdown);
+    QVERIFY(library.statusText().contains(QStringLiteral("Showing saved highlights from ")));
+}
+
+void KoboLibraryTest::browsesSavedBooksAfterUnplug()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountPath = directory.filePath(QStringLiteral("KOBOeReader"));
+    const QString databasePath = mountedDatabasePath(mountPath);
+    QVERIFY(QDir().mkpath(QFileInfo(databasePath).path()));
+    QVERIFY(createDatabase(databasePath));
+    QVERIFY(writeSerialNumber(databasePath, QStringLiteral("N-BROWSE")));
+
+    QList<KoboVolume> volumes{{mountPath, QStringLiteral("Kobo Reader")}};
+    KoboLibrary library([&volumes] { return volumes; }, 20, libraryStorePath(directory));
+    library.refreshDevices();
+    QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+
+    const int alphaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha"));
+    const int betaIndex = bookIndexWithVolumeId(library.books(), QStringLiteral("book-beta"));
+    QVERIFY(alphaIndex >= 0);
+    QVERIFY(betaIndex >= 0);
+    library.setCurrentBookIndex(alphaIndex);
+    const QString alphaMarkdown = library.currentBookMarkdown();
+    const QString alphaObsidian = library.currentBookObsidianMarkdown();
+    const QString alphaPlain = library.currentBookPlainText();
+    library.setCurrentBookIndex(betaIndex);
+    const QString betaMarkdown = library.currentBookMarkdown();
+    const QString betaObsidian = library.currentBookObsidianMarkdown();
+    const QString betaPlain = library.currentBookPlainText();
+    QVERIFY(alphaMarkdown != betaMarkdown);
+
+    volumes.clear();
+    QTRY_COMPARE_WITH_TIMEOUT(library.statusText(),
+                              QStringLiteral("Showing saved highlights from Kobo Reader. Connect the Kobo to update."),
+                              500);
+    QCOMPARE(library.currentBookIndex(), betaIndex);
+    QCOMPARE(library.currentBookMarkdown(), betaMarkdown);
+    QCOMPARE(library.currentBookObsidianMarkdown(), betaObsidian);
+    QCOMPARE(library.currentBookPlainText(), betaPlain);
+
+    library.setCurrentBookIndex(bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha")));
+    QCOMPARE(library.currentBookMarkdown(), alphaMarkdown);
+    QCOMPARE(library.currentBookObsidianMarkdown(), alphaObsidian);
+    QCOMPARE(library.currentBookPlainText(), alphaPlain);
+}
+
+void KoboLibraryTest::dropsHighlightRemovedOnDevice()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountPath = directory.filePath(QStringLiteral("KOBOeReader"));
+    const QString databasePath = mountedDatabasePath(mountPath);
+    QVERIFY(QDir().mkpath(QFileInfo(databasePath).path()));
+    QVERIFY(createDatabase(databasePath));
+    QVERIFY(writeSerialNumber(databasePath, QStringLiteral("N-DROP")));
+
+    QList<KoboVolume> volumes{{mountPath, QStringLiteral("Kobo Reader")}};
+    KoboLibrary library([&volumes] { return volumes; }, 20, libraryStorePath(directory));
+    library.refreshDevices();
+    QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+    library.setCurrentBookIndex(bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha")));
+    QVERIFY(library.currentBookMarkdown().contains(QStringLiteral("Later text")));
+
+    volumes.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(library.statusText().contains(QStringLiteral("Showing saved highlights")), 500);
+    QVERIFY(library.currentBookMarkdown().contains(QStringLiteral("Later text")));
+    QVERIFY(alterDatabase(databasePath, {QStringLiteral("DELETE FROM Bookmark WHERE BookmarkID = 'later-highlight'")}));
+
+    volumes.append(KoboVolume{mountPath, QStringLiteral("Kobo Reader")});
+    QTRY_VERIFY_WITH_TIMEOUT(library.statusText().contains(QStringLiteral("Loaded 4 annotated books")), 500);
+    const QVariantMap alpha = bookWithVolumeId(library.books(), QStringLiteral("book-alpha"));
+    QCOMPARE(alpha.value(QStringLiteral("highlightCount")).toInt(), 1);
+    library.setCurrentBookIndex(bookIndexWithVolumeId(library.books(), QStringLiteral("book-alpha")));
+    const QString updated = library.currentBookMarkdown();
+    QVERIFY(!updated.contains(QStringLiteral("Later text")));
+    QVERIFY(updated.contains(QStringLiteral("Selected note text")));
+
+    volumes.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(library.statusText().contains(QStringLiteral("Showing saved highlights")), 500);
+    QCOMPARE(library.currentBookMarkdown(), updated);
+    QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("highlightCount")).toInt(), 1);
+}
+
+void KoboLibraryTest::snapshotsStaySeparatePerSerial()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountA = directory.filePath(QStringLiteral("AlphaKobo"));
+    const QString mountB = directory.filePath(QStringLiteral("BetaKobo"));
+    const QString pathA = mountedDatabasePath(mountA);
+    const QString pathB = mountedDatabasePath(mountB);
+    QVERIFY(QDir().mkpath(QFileInfo(pathA).path()));
+    QVERIFY(QDir().mkpath(QFileInfo(pathB).path()));
+    QVERIFY(createDatabase(pathA));
+    QVERIFY(createDatabase(pathB));
+    QVERIFY(writeSerialNumber(pathA, QStringLiteral("N-SERIAL-A")));
+    QVERIFY(writeSerialNumber(pathB, QStringLiteral("N-SERIAL-B")));
+    QVERIFY(alterDatabase(pathB, {
+        QStringLiteral("UPDATE content SET Title = 'Serial B Only' WHERE ContentID = 'book-alpha'"),
+        QStringLiteral("DELETE FROM Bookmark WHERE VolumeID != 'book-alpha'"),
+    }));
+
+    QList<KoboVolume> volumes{{mountA, QStringLiteral("Alpha Kobo")}};
+    KoboLibrary library([&volumes] { return volumes; }, 20, libraryStorePath(directory));
+    library.refreshDevices();
+    QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+    library.setCurrentBookIndex(0);
+    const QString alphaMarkdown = library.currentBookMarkdown();
+    QVERIFY(!alphaMarkdown.isEmpty());
+
+    volumes.append(KoboVolume{mountB, QStringLiteral("Beta Kobo")});
+    QTRY_COMPARE_WITH_TIMEOUT(library.devices().size(), 2, 500);
+    QCOMPARE(library.currentDeviceIndex(), deviceIndexForPath(library.devices(), pathA));
+    QCOMPARE(library.currentBookMarkdown(), alphaMarkdown);
+
+    library.setCurrentDeviceIndex(deviceIndexForPath(library.devices(), pathB));
+    QCOMPARE(library.books().size(), 1);
+    QCOMPARE(library.books().at(0).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Serial B Only"));
+
+    volumes.clear();
+    QTRY_VERIFY_WITH_TIMEOUT(library.devices().size() == 2
+                             && library.devices().at(0).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)"))
+                             && library.devices().at(1).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")),
+                             500);
+    const int savedA = deviceIndexForKey(library.devices(), QStringLiteral("N-SERIAL-A"));
+    const int savedB = deviceIndexForKey(library.devices(), QStringLiteral("N-SERIAL-B"));
+    QVERIFY(savedA >= 0);
+    QVERIFY(savedB >= 0);
+    QVERIFY(savedA != savedB);
+    library.setCurrentDeviceIndex(savedA);
+    QCOMPARE(library.books().size(), 4);
+    QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+             QStringLiteral("Alpha"));
+    library.setCurrentDeviceIndex(savedB);
+    QCOMPARE(library.books().size(), 1);
+    QCOMPARE(library.books().at(0).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Serial B Only"));
+}
+
+void KoboLibraryTest::syncLeavesDeviceDatabaseUnchanged()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString databasePath = directory.filePath(QStringLiteral("KoboReader.sqlite"));
+    QVERIFY(createDatabase(databasePath));
+
+    QFile database(databasePath);
+    QVERIFY(database.open(QIODevice::ReadOnly));
+    const QByteArray before = database.readAll();
+    database.close();
+    QVERIFY(!before.isEmpty());
+
+    {
+        KoboLibrary library([] { return QList<KoboVolume>(); }, 60000, libraryStorePath(directory));
+        QVERIFY(library.addDatabase(databasePath));
+        QCOMPARE(library.books().size(), 4);
+    }
+
+    QVERIFY(database.open(QIODevice::ReadOnly));
+    const QByteArray after = database.readAll();
+    database.close();
+    QCOMPARE(after, before);
+
+    KoboLibrary saved([] { return QList<KoboVolume>(); }, 60000, libraryStorePath(directory));
+    saved.refreshDevices();
+    QCOMPARE(saved.devices().size(), 1);
+    QCOMPARE(saved.books().size(), 4);
+}
+
+void KoboLibraryTest::serialFollowsDeviceAcrossMounts()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountA = directory.filePath(QStringLiteral("MountA"));
+    const QString mountB = directory.filePath(QStringLiteral("MountB"));
+    const QString pathA = mountedDatabasePath(mountA);
+    const QString pathB = mountedDatabasePath(mountB);
+    QVERIFY(QDir().mkpath(QFileInfo(pathA).path()));
+    QVERIFY(QDir().mkpath(QFileInfo(pathB).path()));
+    QVERIFY(createDatabase(pathA));
+    QVERIFY(createDatabase(pathB));
+    QVERIFY(writeSerialNumber(pathA, QStringLiteral("N-MOVED")));
+    QVERIFY(writeSerialNumber(pathB, QStringLiteral("N-MOVED")));
+    QVERIFY(alterDatabase(pathB, {
+        QStringLiteral("UPDATE content SET Title = 'Moved Title' WHERE ContentID = 'book-alpha'"),
+    }));
+
+    QList<KoboVolume> volumes{{mountA, QStringLiteral("Kobo One")}};
+    const QString storePath = libraryStorePath(directory);
+    {
+        KoboLibrary library([&volumes] { return volumes; }, 20, storePath);
+        library.refreshDevices();
+        QTRY_COMPARE_WITH_TIMEOUT(library.books().size(), 4, 500);
+        QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+                 QStringLiteral("Alpha"));
+
+        volumes.clear();
+        QTRY_VERIFY_WITH_TIMEOUT(library.devices().size() == 1
+                                 && library.devices().at(0).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")),
+                                 500);
+
+        volumes.append(KoboVolume{mountB, QStringLiteral("Kobo Two")});
+        QTRY_COMPARE_WITH_TIMEOUT(library.devices().size(), 1, 500);
+        QTRY_COMPARE_WITH_TIMEOUT(library.statusText(),
+                                  QStringLiteral("Loaded 4 annotated books from Kobo Two."),
+                                  500);
+        QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+                 QStringLiteral("Moved Title"));
+        QCOMPARE(library.devices().at(0).toMap().value(QStringLiteral("deviceKey")).toString(), QStringLiteral("N-MOVED"));
+
+        volumes.clear();
+        QTRY_VERIFY_WITH_TIMEOUT(library.devices().size() == 1
+                                 && library.devices().at(0).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")),
+                                 500);
+        QCOMPARE(library.devices().at(0).toMap().value(QStringLiteral("deviceKey")).toString(), QStringLiteral("N-MOVED"));
+        QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+                 QStringLiteral("Moved Title"));
+    }
+
+    KoboLibrary restored([] { return QList<KoboVolume>(); }, 60000, storePath);
+    restored.refreshDevices();
+    QCOMPARE(restored.devices().size(), 1);
+    QCOMPARE(restored.devices().at(0).toMap().value(QStringLiteral("deviceKey")).toString(), QStringLiteral("N-MOVED"));
+    QCOMPARE(bookWithVolumeId(restored.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+             QStringLiteral("Moved Title"));
+}
+
+void KoboLibraryTest::pathIdentityStartsNewLibraryWithoutSerial()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString pathA = directory.filePath(QStringLiteral("loose-a/KoboReader.sqlite"));
+    const QString pathB = directory.filePath(QStringLiteral("loose-b/KoboReader.sqlite"));
+    QVERIFY(QDir().mkpath(QFileInfo(pathA).path()));
+    QVERIFY(QDir().mkpath(QFileInfo(pathB).path()));
+    QVERIFY(createDatabase(pathA));
+    QVERIFY(createDatabase(pathB));
+    QVERIFY(alterDatabase(pathB, {
+        QStringLiteral("UPDATE content SET Title = 'Path B Only' WHERE ContentID = 'book-alpha'"),
+    }));
+
+    const QString storePath = libraryStorePath(directory);
+    {
+        KoboLibrary library([] { return QList<KoboVolume>(); }, 60000, storePath);
+        QVERIFY(library.addDatabase(pathA));
+        QVERIFY(library.addDatabase(pathB));
+        QCOMPARE(library.devices().size(), 2);
+        QVERIFY(library.devices().at(0).toMap().value(QStringLiteral("serial")).toString().isEmpty());
+        QVERIFY(library.devices().at(1).toMap().value(QStringLiteral("serial")).toString().isEmpty());
+        QVERIFY(library.devices().at(0).toMap().value(QStringLiteral("deviceKey")).toString()
+                != library.devices().at(1).toMap().value(QStringLiteral("deviceKey")).toString());
+    }
+
+    KoboLibrary saved([] { return QList<KoboVolume>(); }, 60000, storePath);
+    saved.refreshDevices();
+    QCOMPARE(saved.devices().size(), 2);
+    const int indexA = deviceIndexForPath(saved.devices(), pathA);
+    const int indexB = deviceIndexForPath(saved.devices(), pathB);
+    QVERIFY(indexA >= 0);
+    QVERIFY(indexB >= 0);
+    QVERIFY(indexA != indexB);
+    saved.setCurrentDeviceIndex(indexA);
+    QCOMPARE(bookWithVolumeId(saved.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+             QStringLiteral("Alpha"));
+    saved.setCurrentDeviceIndex(indexB);
+    QCOMPARE(bookWithVolumeId(saved.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+             QStringLiteral("Path B Only"));
+}
+
+void KoboLibraryTest::selectsLastOpenedSavedLibrary()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString mountA = directory.filePath(QStringLiteral("First"));
+    const QString mountB = directory.filePath(QStringLiteral("Second"));
+    const QString pathA = mountedDatabasePath(mountA);
+    const QString pathB = mountedDatabasePath(mountB);
+    QVERIFY(QDir().mkpath(QFileInfo(pathA).path()));
+    QVERIFY(QDir().mkpath(QFileInfo(pathB).path()));
+    QVERIFY(createDatabase(pathA));
+    QVERIFY(createDatabase(pathB));
+    QVERIFY(writeSerialNumber(pathA, QStringLiteral("N-LAST-A")));
+    QVERIFY(writeSerialNumber(pathB, QStringLiteral("N-LAST-B")));
+    QVERIFY(alterDatabase(pathB, {
+        QStringLiteral("UPDATE content SET Title = 'Last Opened' WHERE ContentID = 'book-alpha'"),
+    }));
+
+    const QString storePath = libraryStorePath(directory);
+    {
+        QList<KoboVolume> volumes{
+            {mountA, QStringLiteral("Alpha Kobo")},
+            {mountB, QStringLiteral("Beta Kobo")},
+        };
+        KoboLibrary library([&volumes] { return volumes; }, 60000, storePath);
+        library.refreshDevices();
+        QCOMPARE(library.devices().size(), 2);
+        library.setCurrentDeviceIndex(deviceIndexForKey(library.devices(), QStringLiteral("N-LAST-B")));
+        QCOMPARE(bookWithVolumeId(library.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+                 QStringLiteral("Last Opened"));
+    }
+
+    KoboLibrary restored([] { return QList<KoboVolume>(); }, 60000, storePath);
+    restored.refreshDevices();
+    QCOMPARE(restored.devices().size(), 2);
+    QCOMPARE(restored.currentDeviceIndex(), deviceIndexForKey(restored.devices(), QStringLiteral("N-LAST-B")));
+    QCOMPARE(bookWithVolumeId(restored.books(), QStringLiteral("book-alpha")).value(QStringLiteral("title")).toString(),
+             QStringLiteral("Last Opened"));
 }
 
 QTEST_GUILESS_MAIN(KoboLibraryTest)

@@ -34,6 +34,8 @@ qt_add_executable(kbextract
     clipboard_helper.h
     kobo_library.cpp
     kobo_library.h
+    annotation_store.cpp
+    annotation_store.h
     markdown_highlighter.cpp
     markdown_highlighter.h
     omarchy_theme.cpp
@@ -179,6 +181,8 @@ if(BUILD_TESTING)
         tests/kobo_library_test.cpp
         kobo_library.cpp
         kobo_library.h
+        annotation_store.cpp
+        annotation_store.h
     )
 
     target_include_directories(kobo_library_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -227,6 +231,7 @@ if(BUILD_TESTING)
         file_url.h
         clipboard_helper.cpp clipboard_helper.h
         kobo_library.cpp kobo_library.h
+        annotation_store.cpp annotation_store.h
         markdown_highlighter.cpp markdown_highlighter.h
         omarchy_theme.cpp omarchy_theme.h
         system_appearance.cpp system_appearance.h
@@ -260,6 +265,7 @@ if(BUILD_TESTING)
             file_url.h
             clipboard_helper.cpp clipboard_helper.h
             kobo_library.cpp kobo_library.h
+            annotation_store.cpp annotation_store.h
             markdown_highlighter.cpp markdown_highlighter.h
             system_appearance.cpp system_appearance.h
         )

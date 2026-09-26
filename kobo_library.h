@@ -10,6 +10,8 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include "annotation_store.h"
+
 struct KoboVolume {
     QString rootPath;
     QString displayName;
@@ -34,7 +36,10 @@ class KoboLibrary : public QObject
 
 public:
     explicit KoboLibrary(QObject *parent = nullptr);
+    explicit KoboLibrary(const QString &libraryPath, QObject *parent = nullptr);
     KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, QObject *parent = nullptr);
+    KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, const QString &libraryPath,
+                QObject *parent = nullptr);
     ~KoboLibrary() override;
 
     QVariantList devices() const;
@@ -76,6 +81,14 @@ private:
     void setStatusText(const QString &statusText);
     QString normalizedDatabasePath(const QString &databasePath) const;
     QVariantMap manualDevice(const QString &databasePath) const;
+    QVariantMap deviceRecord(const QString &displayName, const QString &mountPath, const QString &databasePath,
+                             bool manual) const;
+    QVariantMap savedDevice(const StoredLibrary &library) const;
+    QString savedStatusText(const QString &libraryName) const;
+    bool showSavedLibrary(const QVariantMap &device);
+    bool loadResolvedAnnotations(const QString &volumeId, QList<StoredAnnotation> *annotations, QString *error);
+    void formatAnnotations(const QList<StoredAnnotation> &annotations, QString *markdown, QString *obsidianMarkdown,
+                           QString *plainText) const;
 
     QVariantList m_devices;
     QVariantList m_manualDevices;
@@ -95,4 +108,5 @@ private:
     QString m_connectionName;
     QSqlDatabase m_database;
     bool m_currentLoadSucceeded = false;
+    AnnotationStore m_annotationStore;
 };

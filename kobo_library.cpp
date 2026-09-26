@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
@@ -39,6 +40,39 @@ struct ChapterAnnotations {
 QString deviceDatabasePath(const QVariantMap &device)
 {
     return device.value(QStringLiteral("databasePath")).toString();
+}
+
+QString koboReaderConfPath(const QString &databasePath)
+{
+    const QDir databaseDirectory = QFileInfo(databasePath).dir();
+    if (databaseDirectory.dirName() != QLatin1String(".kobo"))
+        return {};
+    return databaseDirectory.filePath(QStringLiteral("Kobo/Kobo eReader.conf"));
+}
+
+QString readSerialNumber(const QString &confPath)
+{
+    if (confPath.isEmpty())
+        return {};
+
+    QFile conf(confPath);
+    if (!conf.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+
+    while (!conf.atEnd()) {
+        const QString line = QString::fromUtf8(conf.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#')) || line.startsWith(QLatin1Char(';'))
+            || line.startsWith(QLatin1Char('['))) {
+            continue;
+        }
+        const int separator = line.indexOf(QLatin1Char('='));
+        if (separator < 0 || line.left(separator).trimmed() != QLatin1String("SerialNumber"))
+            continue;
+        const QString serial = line.mid(separator + 1).trimmed();
+        if (!serial.isEmpty())
+            return serial;
+    }
+    return {};
 }
 
 QString normalizedText(QString text)
@@ -132,14 +166,26 @@ QList<KoboVolume> mountedKoboVolumes()
 } // namespace
 
 KoboLibrary::KoboLibrary(QObject *parent)
-    : KoboLibrary(mountedKoboVolumes, 2000, parent)
+    : KoboLibrary(mountedKoboVolumes, 2000, defaultAnnotationStorePath(), parent)
+{
+}
+
+KoboLibrary::KoboLibrary(const QString &libraryPath, QObject *parent)
+    : KoboLibrary(mountedKoboVolumes, 2000, libraryPath, parent)
 {
 }
 
 KoboLibrary::KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, QObject *parent)
+    : KoboLibrary(std::move(volumeProvider), refreshIntervalMs, defaultAnnotationStorePath(), parent)
+{
+}
+
+KoboLibrary::KoboLibrary(KoboVolumeProvider volumeProvider, int refreshIntervalMs, const QString &libraryPath,
+                         QObject *parent)
     : QObject(parent)
     , m_volumeProvider(std::move(volumeProvider))
     , m_connectionName(QStringLiteral("kbextract-kobo-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
+    , m_annotationStore(libraryPath.isEmpty() ? defaultAnnotationStorePath() : libraryPath)
 {
     connect(&m_deviceRefreshTimer, &QTimer::timeout, this, [this] {
         rebuildDevices();
@@ -242,10 +288,39 @@ void KoboLibrary::setCurrentBookIndex(int index)
     const QString author = book.value(QStringLiteral("author")).toString();
     const QString volumeId = book.value(QStringLiteral("volumeId")).toString();
 
-    if (!m_database.isOpen()) {
+    QList<StoredAnnotation> annotations;
+    QString error;
+    if (m_database.isOpen()) {
+        if (!loadResolvedAnnotations(volumeId, &annotations, &error)) {
+            setCurrentBookState(index, title, author, {}, {}, {}, error);
+            return;
+        }
+    } else if (m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
+               && m_devices.at(m_currentDeviceIndex).toMap().value(QStringLiteral("saved")).toBool()) {
+        const QString deviceKey = m_devices.at(m_currentDeviceIndex).toMap().value(QStringLiteral("deviceKey")).toString();
+        if (!m_annotationStore.annotations(deviceKey, volumeId, &annotations)) {
+            setCurrentBookState(index, title, author, {}, {}, {},
+                                tr("Could not read the saved highlight library: %1").arg(m_annotationStore.lastError()));
+            return;
+        }
+    } else {
         setCurrentBookState(index, title, author, {}, {}, {}, tr("The Kobo database is not open."));
         return;
     }
+
+    QString markdown;
+    QString obsidianMarkdown;
+    QString plainText;
+    formatAnnotations(annotations, &markdown, &obsidianMarkdown, &plainText);
+    const QString annotationStatus = markdown.isEmpty()
+        ? tr("No visible highlights or notes for this book.")
+        : QString();
+    setCurrentBookState(index, title, author, markdown, obsidianMarkdown, plainText, annotationStatus);
+}
+
+bool KoboLibrary::loadResolvedAnnotations(const QString &volumeId, QList<StoredAnnotation> *annotations, QString *error)
+{
+    annotations->clear();
 
     static const QString kepubChapterQueryText = QStringLiteral(R"SQL(
         SELECT
@@ -268,15 +343,15 @@ void KoboLibrary::setCurrentBookIndex(int index)
     QSqlQuery kepubChapterQuery(m_database);
     kepubChapterQuery.setForwardOnly(true);
     if (!kepubChapterQuery.prepare(kepubChapterQueryText)) {
-        setCurrentBookState(index, title, author, {}, {}, {},
-                            tr("Could not prepare the chapter query: %1").arg(kepubChapterQuery.lastError().text()));
-        return;
+        if (error)
+            *error = tr("Could not prepare the chapter query: %1").arg(kepubChapterQuery.lastError().text());
+        return false;
     }
     kepubChapterQuery.bindValue(QStringLiteral(":volume_id"), volumeId);
     if (!kepubChapterQuery.exec()) {
-        setCurrentBookState(index, title, author, {}, {}, {},
-                            tr("Could not read this book's chapters: %1").arg(kepubChapterQuery.lastError().text()));
-        return;
+        if (error)
+            *error = tr("Could not read this book's chapters: %1").arg(kepubChapterQuery.lastError().text());
+        return false;
     }
 
     QHash<QString, ChapterMetadata> kepubChapters;
@@ -343,39 +418,23 @@ void KoboLibrary::setCurrentBookIndex(int index)
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(queryText)) {
-        setCurrentBookState(index, title, author, {}, {}, {},
-                            tr("Could not prepare the annotation query: %1").arg(query.lastError().text()));
-        return;
+        if (error)
+            *error = tr("Could not prepare the annotation query: %1").arg(query.lastError().text());
+        return false;
     }
     query.bindValue(QStringLiteral(":volume_id"), volumeId);
     if (!query.exec()) {
-        setCurrentBookState(index, title, author, {}, {}, {},
-                            tr("Could not read this book's annotations: %1").arg(query.lastError().text()));
-        return;
+        if (error)
+            *error = tr("Could not read this book's annotations: %1").arg(query.lastError().text());
+        return false;
     }
 
-    QList<ChapterAnnotations> chapters;
-    QHash<QString, int> chapterIndexes;
-    int anonymousChapterIndex = 0;
     while (query.next()) {
         const QString bookmarkId = normalizedText(query.value(0).toString());
         const QString contentId = normalizedText(query.value(1).toString());
         const QString highlightedText = normalizedText(query.value(2).toString());
         const QString noteText = normalizedText(query.value(3).toString());
-        QStringList annotationParts;
-        QStringList obsidianAnnotationParts;
-        QStringList plainTextAnnotationParts;
-        if (!highlightedText.isEmpty()) {
-            annotationParts.append(highlightBlock(highlightedText));
-            obsidianAnnotationParts.append(obsidianHighlightBlock(highlightedText));
-            plainTextAnnotationParts.append(reflowedHighlightText(highlightedText));
-        }
-        if (!noteText.isEmpty()) {
-            annotationParts.append(noteParagraph(noteText));
-            obsidianAnnotationParts.append(noteParagraph(noteText));
-            plainTextAnnotationParts.append(noteParagraph(noteText));
-        }
-        if (annotationParts.isEmpty())
+        if (highlightedText.isEmpty() && noteText.isEmpty())
             continue;
 
         QString chapterKey = contentId;
@@ -407,11 +466,48 @@ void KoboLibrary::setCurrentBookIndex(int index)
             }
         }
 
+        annotations->append(StoredAnnotation{
+            .bookmarkId = bookmarkId,
+            .highlightText = highlightedText,
+            .noteText = noteText,
+            .chapterKey = chapterKey,
+            .chapterTitle = chapterTitle,
+            .chapterOrder = chapterOrder,
+            .hasChapterOrder = hasChapterOrder,
+            .sortIndex = static_cast<int>(annotations->size()),
+        });
+    }
+    return true;
+}
+
+void KoboLibrary::formatAnnotations(const QList<StoredAnnotation> &annotations, QString *markdown,
+                                    QString *obsidianMarkdown, QString *plainText) const
+{
+    QList<ChapterAnnotations> chapters;
+    QHash<QString, int> chapterIndexes;
+    int anonymousChapterIndex = 0;
+    for (const StoredAnnotation &annotation : annotations) {
+        QStringList annotationParts;
+        QStringList obsidianAnnotationParts;
+        QStringList plainTextAnnotationParts;
+        if (!annotation.highlightText.isEmpty()) {
+            annotationParts.append(highlightBlock(annotation.highlightText));
+            obsidianAnnotationParts.append(obsidianHighlightBlock(annotation.highlightText));
+            plainTextAnnotationParts.append(reflowedHighlightText(annotation.highlightText));
+        }
+        if (!annotation.noteText.isEmpty()) {
+            annotationParts.append(noteParagraph(annotation.noteText));
+            obsidianAnnotationParts.append(noteParagraph(annotation.noteText));
+            plainTextAnnotationParts.append(noteParagraph(annotation.noteText));
+        }
+        if (annotationParts.isEmpty())
+            continue;
+
         QString groupKey;
-        if (!chapterKey.isEmpty()) {
-            groupKey = QStringLiteral("chapter:%1").arg(chapterKey);
-        } else if (!bookmarkId.isEmpty()) {
-            groupKey = QStringLiteral("bookmark:%1").arg(bookmarkId);
+        if (!annotation.chapterKey.isEmpty()) {
+            groupKey = QStringLiteral("chapter:%1").arg(annotation.chapterKey);
+        } else if (!annotation.bookmarkId.isEmpty()) {
+            groupKey = QStringLiteral("bookmark:%1").arg(annotation.bookmarkId);
         } else {
             groupKey = QStringLiteral("anonymous:%1").arg(anonymousChapterIndex++);
         }
@@ -421,20 +517,20 @@ void KoboLibrary::setCurrentBookIndex(int index)
             chapterIndex = chapters.size();
             chapterIndexes.insert(groupKey, chapterIndex);
             chapters.append(ChapterAnnotations{
-                .title = chapterTitle,
+                .title = annotation.chapterTitle,
                 .annotations = {},
                 .obsidianAnnotations = {},
                 .plainTextAnnotations = {},
-                .order = chapterOrder,
-                .hasOrder = hasChapterOrder,
+                .order = annotation.chapterOrder,
+                .hasOrder = annotation.hasChapterOrder,
                 .firstSeen = chapterIndex,
             });
         } else {
-            if (chapters[chapterIndex].title.isEmpty() && !chapterTitle.isEmpty())
-                chapters[chapterIndex].title = chapterTitle;
-            if (!chapters[chapterIndex].hasOrder && hasChapterOrder) {
+            if (chapters[chapterIndex].title.isEmpty() && !annotation.chapterTitle.isEmpty())
+                chapters[chapterIndex].title = annotation.chapterTitle;
+            if (!chapters[chapterIndex].hasOrder && annotation.hasChapterOrder) {
                 chapters[chapterIndex].hasOrder = true;
-                chapters[chapterIndex].order = chapterOrder;
+                chapters[chapterIndex].order = annotation.chapterOrder;
             }
         }
 
@@ -463,13 +559,12 @@ void KoboLibrary::setCurrentBookIndex(int index)
                                         + chapter.plainTextAnnotations.join(QStringLiteral("\n\n\n")));
     }
 
-    const QString markdown = chapterSections.join(QStringLiteral("\n\n\n"));
-    const QString obsidianMarkdown = obsidianChapterSections.join(QStringLiteral("\n\n\n"));
-    const QString plainText = plainTextChapterSections.join(QStringLiteral("\n\n\n"));
-    const QString annotationStatus = markdown.isEmpty()
-        ? tr("No visible highlights or notes for this book.")
-        : QString();
-    setCurrentBookState(index, title, author, markdown, obsidianMarkdown, plainText, annotationStatus);
+    if (markdown)
+        *markdown = chapterSections.join(QStringLiteral("\n\n\n"));
+    if (obsidianMarkdown)
+        *obsidianMarkdown = obsidianChapterSections.join(QStringLiteral("\n\n\n"));
+    if (plainText)
+        *plainText = plainTextChapterSections.join(QStringLiteral("\n\n\n"));
 }
 
 void KoboLibrary::refreshDevices()
@@ -541,12 +636,7 @@ QVariantList KoboLibrary::discoveredDevices() const
         if (displayName.isEmpty())
             displayName = tr("Kobo eReader");
 
-        appendDevice({
-            {QStringLiteral("displayName"), displayName},
-            {QStringLiteral("mountPath"), mountPath},
-            {QStringLiteral("databasePath"), databasePath},
-            {QStringLiteral("manual"), false},
-        });
+        appendDevice(deviceRecord(displayName, mountPath, databasePath, false));
     }
 
     std::sort(devices.begin(), devices.end(), [](const QVariant &left, const QVariant &right) {
@@ -567,14 +657,52 @@ QVariantList KoboLibrary::discoveredDevices() const
             appendDevice(device);
     }
 
+    QVariantList savedDevices;
+    const QList<StoredLibrary> libraries = m_annotationStore.libraries();
+    for (const StoredLibrary &library : libraries) {
+        const QString savedPath = normalizedDatabasePath(library.databasePath);
+        bool covered = false;
+        for (const QVariant &deviceValue : devices) {
+            const QVariantMap device = deviceValue.toMap();
+            const bool sameKey = device.value(QStringLiteral("deviceKey")).toString() == library.deviceKey;
+            const bool sameSerial = !library.serial.isEmpty()
+                && device.value(QStringLiteral("serial")).toString() == library.serial;
+            const bool samePath = !savedPath.isEmpty()
+                && normalizedDatabasePath(deviceDatabasePath(device)) == savedPath;
+            if (sameKey || sameSerial || samePath) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered)
+            savedDevices.append(savedDevice(library));
+    }
+
+    std::sort(savedDevices.begin(), savedDevices.end(), [](const QVariant &left, const QVariant &right) {
+        const QVariantMap leftDevice = left.toMap();
+        const QVariantMap rightDevice = right.toMap();
+        const int nameOrder = QString::localeAwareCompare(
+            leftDevice.value(QStringLiteral("displayName")).toString(),
+            rightDevice.value(QStringLiteral("displayName")).toString());
+        if (nameOrder != 0)
+            return nameOrder < 0;
+        return leftDevice.value(QStringLiteral("deviceKey")).toString()
+            < rightDevice.value(QStringLiteral("deviceKey")).toString();
+    });
+    for (const QVariant &saved : savedDevices)
+        devices.append(saved);
+
     return devices;
 }
 
 void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forceReload)
 {
-    const QString oldPath = m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
-        ? normalizedDatabasePath(deviceDatabasePath(m_devices.at(m_currentDeviceIndex).toMap()))
-        : QString();
+    const QVariantMap oldDevice = m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
+        ? m_devices.at(m_currentDeviceIndex).toMap()
+        : QVariantMap();
+    const QString oldPath = normalizedDatabasePath(deviceDatabasePath(oldDevice));
+    const QString oldKey = oldDevice.value(QStringLiteral("deviceKey")).toString();
+    const bool oldSaved = oldDevice.value(QStringLiteral("saved")).toBool();
     const QString requestedPath = normalizedDatabasePath(preferredDatabasePath);
     const QVariantList devices = discoveredDevices();
 
@@ -605,8 +733,33 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
         }
     }
 
-    if (selectedIndex < 0 && oldPath.isEmpty() && m_pendingDatabasePath.isEmpty() && !m_devices.isEmpty())
-        selectedIndex = 0;
+    if (selectedIndex < 0 && !oldKey.isEmpty()) {
+        for (int index = 0; index < m_devices.size(); ++index) {
+            if (m_devices.at(index).toMap().value(QStringLiteral("deviceKey")).toString() == oldKey) {
+                selectedIndex = index;
+                break;
+            }
+        }
+    }
+
+    if (selectedIndex < 0 && oldPath.isEmpty() && oldKey.isEmpty() && m_pendingDatabasePath.isEmpty() && !m_devices.isEmpty()) {
+        const bool anyLive = std::any_of(m_devices.cbegin(), m_devices.cend(), [](const QVariant &deviceValue) {
+            return !deviceValue.toMap().value(QStringLiteral("saved")).toBool();
+        });
+        if (!anyLive) {
+            const QString lastOpenedKey = m_annotationStore.lastOpenedDeviceKey();
+            if (!lastOpenedKey.isEmpty()) {
+                for (int index = 0; index < m_devices.size(); ++index) {
+                    if (m_devices.at(index).toMap().value(QStringLiteral("deviceKey")).toString() == lastOpenedKey) {
+                        selectedIndex = index;
+                        break;
+                    }
+                }
+            }
+        }
+        if (selectedIndex < 0)
+            selectedIndex = 0;
+    }
 
     if (selectedIndex < 0) {
         if (!oldPath.isEmpty())
@@ -615,7 +768,10 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
         return;
     }
 
-    const QString selectedPath = normalizedDatabasePath(deviceDatabasePath(m_devices.at(selectedIndex).toMap()));
+    const QVariantMap selected = m_devices.at(selectedIndex).toMap();
+    const QString selectedPath = normalizedDatabasePath(deviceDatabasePath(selected));
+    const QString selectedKey = selected.value(QStringLiteral("deviceKey")).toString();
+    const bool selectedSaved = selected.value(QStringLiteral("saved")).toBool();
     if (selectedPath == normalizedDatabasePath(m_pendingDatabasePath))
         m_pendingDatabasePath.clear();
 
@@ -624,7 +780,16 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
     if (indexChanged)
         emit currentDeviceIndexChanged();
 
-    if (forceReload || oldPath != selectedPath || !m_database.isOpen())
+    // The live book list was just synced. Keep it, and the open text, when the
+    // volume disappears and the same device's snapshot takes its place.
+    if (selectedSaved && !oldSaved && selectedKey == oldKey && !selectedKey.isEmpty()) {
+        closeDatabase();
+        m_annotationStore.markLastOpened(selectedKey);
+        setStatusText(savedStatusText(selected.value(QStringLiteral("libraryName")).toString()));
+        return;
+    }
+
+    if (forceReload || oldPath != selectedPath || oldKey != selectedKey || selectedSaved != oldSaved || !m_database.isOpen())
         loadCurrentDatabase();
 }
 
@@ -642,18 +807,26 @@ void KoboLibrary::clearDeviceSelection(const QString &statusText)
 
 bool KoboLibrary::loadCurrentDatabase()
 {
-    m_currentLoadSucceeded = false;
-    setBooks({});
-    closeDatabase();
-
     if (m_currentDeviceIndex < 0 || m_currentDeviceIndex >= m_devices.size()) {
+        m_currentLoadSucceeded = false;
+        setBooks({});
+        closeDatabase();
         setStatusText(tr("Connect a Kobo or choose KoboReader.sqlite."));
         return false;
     }
 
     const QVariantMap device = m_devices.at(m_currentDeviceIndex).toMap();
+    if (device.value(QStringLiteral("saved")).toBool())
+        return showSavedLibrary(device);
+
+    m_currentLoadSucceeded = false;
+    setBooks({});
+    closeDatabase();
+
     const QString databasePath = deviceDatabasePath(device);
-    const QString displayName = device.value(QStringLiteral("displayName")).toString();
+    const QString displayName = device.value(QStringLiteral("libraryName")).toString().isEmpty()
+        ? device.value(QStringLiteral("displayName")).toString()
+        : device.value(QStringLiteral("libraryName")).toString();
 
     m_database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
     m_database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
@@ -712,6 +885,40 @@ bool KoboLibrary::loadCurrentDatabase()
             {QStringLiteral("highlightCount"), query.value(QStringLiteral("highlight_count"))},
             {QStringLiteral("noteCount"), query.value(QStringLiteral("note_count"))},
         });
+    }
+
+    QList<StoredBook> storedBooks;
+    storedBooks.reserve(books.size());
+    for (const QVariant &bookValue : books) {
+        const QVariantMap book = bookValue.toMap();
+        StoredBook storedBook;
+        storedBook.volumeId = book.value(QStringLiteral("volumeId")).toString();
+        storedBook.title = book.value(QStringLiteral("title")).toString();
+        storedBook.author = book.value(QStringLiteral("author")).toString();
+        storedBook.highlightCount = book.value(QStringLiteral("highlightCount")).toInt();
+        storedBook.noteCount = book.value(QStringLiteral("noteCount")).toInt();
+        QString annotationError;
+        if (!loadResolvedAnnotations(storedBook.volumeId, &storedBook.annotations, &annotationError)) {
+            setStatusText(annotationError);
+            return false;
+        }
+        storedBooks.append(std::move(storedBook));
+    }
+
+    StoredLibrary snapshot;
+    snapshot.deviceKey = device.value(QStringLiteral("deviceKey")).toString();
+    snapshot.displayName = displayName;
+    snapshot.serial = device.value(QStringLiteral("serial")).toString();
+    snapshot.databasePath = normalizedDatabasePath(databasePath);
+    if (snapshot.deviceKey.isEmpty())
+        snapshot.deviceKey = snapshot.serial.isEmpty() ? snapshot.databasePath : snapshot.serial;
+
+    // Highlight sets are small, so the snapshot is written on this thread at the
+    // end of a successful read instead of on a second SQLite connection.
+    if (!m_annotationStore.replaceLibrary(snapshot, storedBooks)) {
+        setBooks(std::move(books));
+        setStatusText(tr("Could not save the highlight library: %1").arg(m_annotationStore.lastError()));
+        return false;
     }
 
     setBooks(std::move(books));
@@ -805,10 +1012,77 @@ QVariantMap KoboLibrary::manualDevice(const QString &databasePath) const
     if (displayName.isEmpty())
         displayName = tr("Kobo database");
 
+    return deviceRecord(tr("%1 (manual)").arg(displayName), deviceDirectory.absolutePath(), databasePath, true);
+}
+
+QVariantMap KoboLibrary::deviceRecord(const QString &displayName, const QString &mountPath, const QString &databasePath,
+                                      bool manual) const
+{
+    const QString normalizedPath = normalizedDatabasePath(databasePath);
+    const QString serial = readSerialNumber(koboReaderConfPath(normalizedPath));
     return {
-        {QStringLiteral("displayName"), tr("%1 (manual)").arg(displayName)},
-        {QStringLiteral("mountPath"), deviceDirectory.absolutePath()},
-        {QStringLiteral("databasePath"), normalizedDatabasePath(databasePath)},
-        {QStringLiteral("manual"), true},
+        {QStringLiteral("displayName"), displayName},
+        {QStringLiteral("libraryName"), displayName},
+        {QStringLiteral("mountPath"), mountPath},
+        {QStringLiteral("databasePath"), normalizedPath},
+        {QStringLiteral("manual"), manual},
+        {QStringLiteral("saved"), false},
+        {QStringLiteral("serial"), serial},
+        {QStringLiteral("deviceKey"), serial.isEmpty() ? normalizedPath : serial},
     };
+}
+
+QVariantMap KoboLibrary::savedDevice(const StoredLibrary &library) const
+{
+    const QString libraryName = library.displayName.isEmpty() ? tr("Kobo eReader") : library.displayName;
+    QDir mountDirectory = QFileInfo(library.databasePath).dir();
+    if (mountDirectory.dirName() == QLatin1String(".kobo"))
+        mountDirectory.cdUp();
+    return {
+        {QStringLiteral("displayName"), tr("%1 (saved)").arg(libraryName)},
+        {QStringLiteral("libraryName"), libraryName},
+        {QStringLiteral("mountPath"), mountDirectory.absolutePath()},
+        {QStringLiteral("databasePath"), library.databasePath},
+        {QStringLiteral("manual"), false},
+        {QStringLiteral("saved"), true},
+        {QStringLiteral("serial"), library.serial},
+        {QStringLiteral("deviceKey"), library.deviceKey},
+    };
+}
+
+QString KoboLibrary::savedStatusText(const QString &libraryName) const
+{
+    const QString name = libraryName.isEmpty() ? tr("Kobo eReader") : libraryName;
+    return tr("Showing saved highlights from %1. Connect the Kobo to update.").arg(name);
+}
+
+bool KoboLibrary::showSavedLibrary(const QVariantMap &device)
+{
+    m_currentLoadSucceeded = false;
+    closeDatabase();
+
+    const QString deviceKey = device.value(QStringLiteral("deviceKey")).toString();
+    QList<StoredBook> storedBooks;
+    if (!m_annotationStore.books(deviceKey, &storedBooks)) {
+        setBooks({});
+        setStatusText(tr("Could not read the saved highlight library: %1").arg(m_annotationStore.lastError()));
+        return false;
+    }
+
+    QVariantList books;
+    for (const StoredBook &book : storedBooks) {
+        books.append(QVariantMap{
+            {QStringLiteral("volumeId"), book.volumeId},
+            {QStringLiteral("title"), book.title},
+            {QStringLiteral("author"), book.author},
+            {QStringLiteral("highlightCount"), book.highlightCount},
+            {QStringLiteral("noteCount"), book.noteCount},
+        });
+    }
+
+    setBooks(std::move(books));
+    m_annotationStore.markLastOpened(deviceKey);
+    m_currentLoadSucceeded = true;
+    setStatusText(savedStatusText(device.value(QStringLiteral("libraryName")).toString()));
+    return true;
 }

@@ -2,6 +2,7 @@
 
 #include <QClipboard>
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QPalette>
 #include <QProcess>
@@ -86,7 +87,7 @@ private slots:
     void ignoresLegacyAppearance();
     void commandsAndCopyFeedback();
     void selectionCopyAndNavigation();
-    void disconnectClearsCommands();
+    void disconnectKeepsSavedLibrary();
     void sidebarAndMinimumWindow();
     void opensFileUrl();
     void closeExitsApplication();
@@ -124,6 +125,10 @@ void MacUiTest::trigger(const char *name)
 
 void MacUiTest::init()
 {
+    const QString libraryPath = defaultAnnotationStorePath();
+    QFile::remove(libraryPath);
+    QFile::remove(libraryPath + QStringLiteral("-wal"));
+    QFile::remove(libraryPath + QStringLiteral("-shm"));
     mountedVolumes.clear();
     QSettings().clear();
     const QString savedMode = QTest::currentDataTag() && *QTest::currentDataTag()
@@ -269,16 +274,22 @@ void MacUiTest::selectionCopyAndNavigation()
     QCOMPARE(m_library->currentBookIndex(), -1);
 }
 
-void MacUiTest::disconnectClearsCommands()
+void MacUiTest::disconnectKeepsSavedLibrary()
 {
     mountFixtures();
+    const int bookIndex = m_library->currentBookIndex();
+    const QString markdown = m_library->currentBookMarkdown();
+    QVERIFY(!markdown.isEmpty());
     mountedVolumes.clear();
     trigger("refreshAction");
-    QVERIFY(m_library->devices().isEmpty());
-    QCOMPARE(m_library->currentBookIndex(), -1);
-    QVERIFY(!object("copyMarkdownAction")->property("enabled").toBool());
-    QVERIFY(!item("deviceSelector")->isEnabled());
-    QVERIFY(!item("annotationScroll")->isVisible());
+    QCOMPARE(m_library->devices().size(), 2);
+    QVERIFY(m_library->devices().at(m_library->currentDeviceIndex()).toMap().value(QStringLiteral("displayName")).toString().endsWith(QStringLiteral(" (saved)")));
+    QCOMPARE(m_library->currentBookIndex(), bookIndex);
+    QCOMPARE(m_library->currentBookMarkdown(), markdown);
+    QVERIFY(m_library->statusText().contains(QStringLiteral("Showing saved highlights")));
+    QVERIFY(object("copyMarkdownAction")->property("enabled").toBool());
+    QVERIFY(item("deviceSelector")->isEnabled());
+    QVERIFY(item("annotationScroll")->isVisible());
 }
 
 void MacUiTest::sidebarAndMinimumWindow()
