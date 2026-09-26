@@ -177,12 +177,42 @@ endif()
 if(BUILD_TESTING)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
 
-    # qt_add_executable builds a Windows GUI app. Its stdout never reaches
-    # ctest, so a failure is reported with no assertion text.
+    # qt_add_executable defers qt_finalize_target, and that finalizer turns the
+    # binary back into a Windows GUI app. Stdout is then detached from ctest.
+    # Re-apply the console subsystem only after the target is finalized.
+    function(kbextract_force_windows_console target)
+        if(NOT WIN32 OR NOT TARGET "${target}")
+            return()
+        endif()
+        get_target_property(is_finalized "${target}" _qt_is_finalized)
+        if(NOT is_finalized)
+            cmake_language(DEFER CALL kbextract_force_windows_console "${target}")
+            return()
+        endif()
+        set_target_properties("${target}" PROPERTIES WIN32_EXECUTABLE FALSE)
+        if(MSVC)
+            target_link_options("${target}" PRIVATE "/SUBSYSTEM:CONSOLE")
+        endif()
+    endfunction()
+
     function(kbextract_configure_test_executable target)
         if(WIN32)
-            set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE FALSE)
+            cmake_language(DEFER CALL kbextract_force_windows_console "${target}")
         endif()
+    endfunction()
+
+    set(KBEXTRACT_TEST_LOG_DIR "${CMAKE_BINARY_DIR}/test-results")
+    file(MAKE_DIRECTORY "${KBEXTRACT_TEST_LOG_DIR}")
+
+    # -o -,txt keeps the existing ctest stream. The file copy survives a GUI
+    # subsystem, and CI prints it when a test fails.
+    function(kbextract_add_logged_test name target)
+        add_test(
+            NAME "${name}"
+            COMMAND "${target}"
+                -o -,txt
+                -o "${KBEXTRACT_TEST_LOG_DIR}/${name}.txt,txt"
+        )
     endfunction()
 
     qt_add_executable(kobo_library_tests
@@ -197,7 +227,7 @@ if(BUILD_TESTING)
     target_link_libraries(kobo_library_tests PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
     kbextract_configure_test_executable(kobo_library_tests)
 
-    add_test(NAME kobo_library_tests COMMAND kobo_library_tests)
+    kbextract_add_logged_test(kobo_library_tests kobo_library_tests)
 
     qt_add_executable(markdown_highlighter_tests
         tests/markdown_highlighter_test.cpp
@@ -209,7 +239,7 @@ if(BUILD_TESTING)
     target_link_libraries(markdown_highlighter_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Test)
     kbextract_configure_test_executable(markdown_highlighter_tests)
 
-    add_test(NAME markdown_highlighter_tests COMMAND markdown_highlighter_tests)
+    kbextract_add_logged_test(markdown_highlighter_tests markdown_highlighter_tests)
 
     qt_add_executable(omarchy_theme_tests
         tests/omarchy_theme_test.cpp
@@ -221,7 +251,7 @@ if(BUILD_TESTING)
     target_link_libraries(omarchy_theme_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     kbextract_configure_test_executable(omarchy_theme_tests)
 
-    add_test(NAME omarchy_theme_tests COMMAND omarchy_theme_tests)
+    kbextract_add_logged_test(omarchy_theme_tests omarchy_theme_tests)
 
     qt_add_executable(system_appearance_tests
         tests/system_appearance_test.cpp
@@ -233,7 +263,7 @@ if(BUILD_TESTING)
     target_link_libraries(system_appearance_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     kbextract_configure_test_executable(system_appearance_tests)
 
-    add_test(NAME system_appearance_tests COMMAND system_appearance_tests)
+    kbextract_add_logged_test(system_appearance_tests system_appearance_tests)
     set_tests_properties(system_appearance_tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME="
     )
@@ -266,7 +296,7 @@ if(BUILD_TESTING)
             assets/icons/theme-dark.svg assets/icons/theme-omarchy.svg
     )
     foreach(scale IN ITEMS 1 1.5 2)
-        add_test(NAME appearance_ui_tests_scale_${scale} COMMAND appearance_ui_tests)
+        kbextract_add_logged_test(appearance_ui_tests_scale_${scale} appearance_ui_tests)
         set_tests_properties(appearance_ui_tests_scale_${scale} PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=${scale}"
         )
@@ -291,7 +321,7 @@ if(BUILD_TESTING)
             PREFIX "/qt/qml/Kbextract"
             FILES MacMain.qml MacCopyButton.qml AppSession.qml AnnotationBody.qml Theme.qml
         )
-        add_test(NAME mac_ui_tests COMMAND mac_ui_tests)
+        kbextract_add_logged_test(mac_ui_tests mac_ui_tests)
         # Qt's macOS style paints NSViews and passes QWindow::winId() to
         # -[NSView addSubview:]. The offscreen platform's first window id is 1,
         # which AppKit messages as an NSDate (Intel) or faults on (Apple Silicon)
@@ -311,7 +341,7 @@ if(BUILD_TESTING)
     target_link_libraries(clipboard_helper_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
     kbextract_configure_test_executable(clipboard_helper_tests)
 
-    add_test(NAME clipboard_helper_tests COMMAND clipboard_helper_tests)
+    kbextract_add_logged_test(clipboard_helper_tests clipboard_helper_tests)
     set_tests_properties(clipboard_helper_tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME="
     )

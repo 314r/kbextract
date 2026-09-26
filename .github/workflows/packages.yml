@@ -129,6 +129,21 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Show Qt Test logs
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=(build/test-results/*.txt)
+          if (( ${#logs[@]} == 0 )); then
+            echo "No Qt Test logs were written under build/test-results" >&2
+            exit 1
+          fi
+          for log in "${logs[@]}"; do
+            echo "===== ${log} ====="
+            cat "$log"
+          done
+
       - name: Download Linux deployment tools
         if: matrix.platform == 'linux'
         shell: bash
