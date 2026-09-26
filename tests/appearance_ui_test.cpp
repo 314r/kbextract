@@ -522,7 +522,11 @@ void AppearanceUiTest::desktopFontChangesUpdateTypography()
     QVERIFY(tooltip);
     QCOMPARE(tooltip->property("font").value<QFont>().pointSizeF(), resolvedSize);
 
-    QFont different(QStringLiteral("serif"));
+    // "serif" is not a Windows font family. A real system font still changes
+    // the family and keeps QFontInfo from reporting a missing point size.
+    QFont different = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    if (different.family().isEmpty())
+        different = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
     different.setPointSizeF(16.0);
     QGuiApplication::setFont(different);
     QTRY_COMPARE(m_theme->property("uiFont").toString(), QGuiApplication::font().family());

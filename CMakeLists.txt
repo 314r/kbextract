@@ -177,6 +177,14 @@ endif()
 if(BUILD_TESTING)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Test)
 
+    # qt_add_executable builds a Windows GUI app. Its stdout never reaches
+    # ctest, so a failure is reported with no assertion text.
+    function(kbextract_configure_test_executable target)
+        if(WIN32)
+            set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE FALSE)
+        endif()
+    endfunction()
+
     qt_add_executable(kobo_library_tests
         tests/kobo_library_test.cpp
         kobo_library.cpp
@@ -187,6 +195,7 @@ if(BUILD_TESTING)
 
     target_include_directories(kobo_library_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(kobo_library_tests PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+    kbextract_configure_test_executable(kobo_library_tests)
 
     add_test(NAME kobo_library_tests COMMAND kobo_library_tests)
 
@@ -198,6 +207,7 @@ if(BUILD_TESTING)
 
     target_include_directories(markdown_highlighter_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(markdown_highlighter_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Test)
+    kbextract_configure_test_executable(markdown_highlighter_tests)
 
     add_test(NAME markdown_highlighter_tests COMMAND markdown_highlighter_tests)
 
@@ -209,6 +219,7 @@ if(BUILD_TESTING)
 
     target_include_directories(omarchy_theme_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(omarchy_theme_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    kbextract_configure_test_executable(omarchy_theme_tests)
 
     add_test(NAME omarchy_theme_tests COMMAND omarchy_theme_tests)
 
@@ -220,6 +231,7 @@ if(BUILD_TESTING)
 
     target_include_directories(system_appearance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(system_appearance_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    kbextract_configure_test_executable(system_appearance_tests)
 
     add_test(NAME system_appearance_tests COMMAND system_appearance_tests)
     set_tests_properties(system_appearance_tests PROPERTIES
@@ -241,6 +253,7 @@ if(BUILD_TESTING)
         Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
         Qt6::Sql Qt6::Svg Qt6::Test
     )
+    kbextract_configure_test_executable(appearance_ui_tests)
     qt_add_resources(appearance_ui_tests "appearance_ui"
         PREFIX "/qt/qml/Kbextract"
         FILES
@@ -273,6 +286,7 @@ if(BUILD_TESTING)
         target_link_libraries(mac_ui_tests PRIVATE
             Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Sql Qt6::Test
         )
+        kbextract_configure_test_executable(mac_ui_tests)
         qt_add_resources(mac_ui_tests "mac_ui"
             PREFIX "/qt/qml/Kbextract"
             FILES MacMain.qml MacCopyButton.qml AppSession.qml AnnotationBody.qml Theme.qml
@@ -295,6 +309,7 @@ if(BUILD_TESTING)
 
     target_include_directories(clipboard_helper_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(clipboard_helper_tests PRIVATE Qt6::Core Qt6::Gui Qt6::Test)
+    kbextract_configure_test_executable(clipboard_helper_tests)
 
     add_test(NAME clipboard_helper_tests COMMAND clipboard_helper_tests)
     set_tests_properties(clipboard_helper_tests PROPERTIES

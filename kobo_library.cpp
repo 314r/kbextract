@@ -290,14 +290,17 @@ void KoboLibrary::setCurrentBookIndex(int index)
 
     QList<StoredAnnotation> annotations;
     QString error;
+    const QString deviceKey = m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
+        ? m_devices.at(m_currentDeviceIndex).toMap().value(QStringLiteral("deviceKey")).toString()
+        : QString();
     if (m_database.isOpen()) {
         if (!loadResolvedAnnotations(m_database, volumeId, &annotations, &error)) {
             setCurrentBookState(index, title, author, {}, {}, {}, error);
             return;
         }
-    } else if (m_currentDeviceIndex >= 0 && m_currentDeviceIndex < m_devices.size()
-               && m_devices.at(m_currentDeviceIndex).toMap().value(QStringLiteral("saved")).toBool()) {
-        const QString deviceKey = m_devices.at(m_currentDeviceIndex).toMap().value(QStringLiteral("deviceKey")).toString();
+    } else if (!deviceKey.isEmpty()) {
+        // The device file is closed after a successful snapshot so Windows can
+        // delete or unmount it. Book text then comes from that snapshot.
         if (!m_annotationStore.annotations(deviceKey, volumeId, &annotations)) {
             setCurrentBookState(index, title, author, {}, {}, {},
                                 tr("Could not read the saved highlight library: %1").arg(m_annotationStore.lastError()));
@@ -796,7 +799,10 @@ void KoboLibrary::rebuildDevices(const QString &preferredDatabasePath, bool forc
         return;
     }
 
-    if (forceReload || oldPath != selectedPath || oldKey != selectedKey || selectedSaved != oldSaved || !m_database.isOpen()) {
+    // A successful read closes the device file so it can be removed. That is
+    // not a failed open, and it must not reload or clear the open book.
+    const bool deviceFileClosed = !m_database.isOpen() && !m_currentLoadSucceeded;
+    if (forceReload || oldPath != selectedPath || oldKey != selectedKey || selectedSaved != oldSaved || deviceFileClosed) {
         snapshotOtherLiveDevices(selectedSaved ? QString() : selectedPath);
         loadCurrentDatabase();
     } else {
@@ -1006,6 +1012,9 @@ bool KoboLibrary::loadCurrentDatabase()
     }
 
     setBooks(std::move(books));
+    // Drop the device handle. Windows refuses to delete a file we still have
+    // open, and the snapshot now serves the open book.
+    closeDatabase();
     m_currentLoadSucceeded = true;
     if (m_books.isEmpty()) {
         setStatusText(tr("No books with highlights or notes."));
@@ -1075,12 +1084,36 @@ void KoboLibrary::setStatusText(const QString &statusText)
 
 QString KoboLibrary::normalizedDatabasePath(const QString &databasePath) const
 {
-    if (databasePath.trimmed().isEmpty())
+    QString path = databasePath.trimmed();
+    if (path.isEmpty())
         return {};
 
-    const QFileInfo databaseInfo(databasePath);
+    const auto stripExtendedPrefix = [](QString value) {
+        if (value.startsWith(QLatin1String("\\\\?\\UNC\\")))
+            return QLatin1String("\\\\") + value.mid(8);
+        if (value.startsWith(QLatin1String("\\\\?\\")))
+            return value.mid(4);
+        if (value.startsWith(QLatin1String("//?/UNC/")))
+            return QLatin1String("//") + value.mid(8);
+        if (value.startsWith(QLatin1String("//?/")))
+            return value.mid(4);
+        return value;
+    };
+
+    // GetFinalPathNameByHandle can prefix \\?\, and a short 8.3 temp path does
+    // not match its long form. One cleaned path is the device key.
+    path = QDir::fromNativeSeparators(stripExtendedPrefix(path));
+    const QFileInfo databaseInfo(path);
     const QString canonicalPath = databaseInfo.canonicalFilePath();
-    return QDir::cleanPath(canonicalPath.isEmpty() ? databaseInfo.absoluteFilePath() : canonicalPath);
+    path = QDir::cleanPath(canonicalPath.isEmpty()
+                               ? databaseInfo.absoluteFilePath()
+                               : QDir::fromNativeSeparators(stripExtendedPrefix(canonicalPath)));
+    path = QDir::fromNativeSeparators(stripExtendedPrefix(path));
+#ifdef Q_OS_WIN
+    // NTFS lookups are case-insensitive. Fold so C:\Temp and c:\temp are one library.
+    path = path.toCaseFolded();
+#endif
+    return path;
 }
 
 QVariantMap KoboLibrary::manualDevice(const QString &databasePath) const

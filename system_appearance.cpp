@@ -57,8 +57,12 @@ QFont SystemAppearance::fixedFont() const
 
 qreal SystemAppearance::uiFontPointSize() const
 {
-    const qreal pointSize = QFontInfo(m_uiFont).pointSizeF();
-    return pointSize > 0.0 ? pointSize : 9.0;
+    const qreal resolved = QFontInfo(m_uiFont).pointSizeF();
+    if (resolved > 0.0)
+        return resolved;
+    if (m_uiFont.pointSizeF() > 0.0)
+        return m_uiFont.pointSizeF();
+    return 9.0;
 }
 
 bool SystemAppearance::dark() const

@@ -304,18 +304,24 @@ ApplicationWindow {
 
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
+                    // Windows fonts can make "No Kobo device" wider than the 16px
+                    // sidebar padding. Bleed into that padding, then drop the label
+                    // inset, so the text still fits at 200% without clipping.
+                    readonly property real indicatorGap: 2
+                    readonly property real textWidth: contentItem.implicitWidth
+                    readonly property real hostWidth: parent.width
+                    readonly property real neededWidth: textWidth + indicator.implicitWidth + indicatorGap
+                    readonly property real bleed: Math.min(12, Math.max(0, Math.ceil((neededWidth - hostWidth) / 2)))
+                    readonly property real boxWidth: Math.max(0, hostWidth + 2 * bleed)
+                    readonly property real fittedLabelInset: boxWidth <= 0 ? 0 : Math.max(0,
+                        (boxWidth - textWidth - indicator.implicitWidth - indicatorGap) / 2)
+                    readonly property real labelInset: Math.min(Theme.controlHorizontalPadding, fittedLabelInset)
+                    Layout.leftMargin: -bleed
+                    Layout.rightMargin: -bleed
                     implicitHeight: Math.max(Theme.controlMinHeight,
                         Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
                         + topPadding + bottomPadding)
                     height: implicitHeight
-                    // The 246px sidebar leaves about 214px for this combo. At 200% the
-                    // linux font metrics for "No Kobo device" exceed a full character
-                    // of padding on each side, so shrink the label inset until the
-                    // text fits and keep at least 4px clear of the indicator.
-                    readonly property real indicatorGap: 4
-                    readonly property real fittedLabelInset: Math.max(2,
-                        (width - contentItem.implicitWidth - indicator.implicitWidth - indicatorGap) / 2)
-                    readonly property real labelInset: Math.min(Theme.controlHorizontalPadding, fittedLabelInset)
                     leftPadding: labelInset
                     rightPadding: labelInset + indicator.implicitWidth
                     spacing: 0
