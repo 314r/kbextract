@@ -2,7 +2,7 @@
 
 #include <QColor>
 #include <QFont>
-#include <QFontInfo>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QPalette>
 
@@ -57,12 +57,17 @@ void SystemAppearanceTest::followsApplicationFontChanges()
     const auto restore = qScopeGuard([original] { QGuiApplication::setFont(original); });
     SystemAppearance appearance;
     QSignalSpy fontsChanged(&appearance, &SystemAppearance::fontsChanged);
-    QFont changed(QStringLiteral("monospace"));
-    changed.setPointSizeF(18.5);
+    // "monospace" is a fontconfig alias. Windows GDI does not resolve it, so
+    // QFontInfo::pointSizeF() stays -1 and the comparison never succeeds.
+    QFont changed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    if (changed.family().isEmpty())
+        changed = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+    changed.setPointSizeF(18.0);
     QGuiApplication::setFont(changed);
 
-    QTRY_COMPARE(appearance.uiFont(), QGuiApplication::font());
-    QTRY_COMPARE(appearance.uiFontPointSize(), QFontInfo(QGuiApplication::font()).pointSizeF());
+    QTRY_COMPARE(appearance.uiFont().family(), QGuiApplication::font().family());
+    QTRY_COMPARE(appearance.uiFont().pointSizeF(), QGuiApplication::font().pointSizeF());
+    QTRY_COMPARE(appearance.uiFontPointSize(), SystemAppearance::resolvedPointSize(QGuiApplication::font()));
     QVERIFY(!fontsChanged.isEmpty());
 }
 

@@ -21,7 +21,7 @@ jobs:
           - name: Linux x86-64
             runner: ubuntu-22.04
             platform: linux
-            qt_arch: gcc_64
+            qt_arch: linux_gcc_64
           - name: Windows x64
             runner: windows-2022
             platform: windows
@@ -69,19 +69,115 @@ jobs:
           cache: true
           modules: qtshadertools
 
+      # windows-2022 has MinGW on PATH. CMake's Ninja generator probes cc.exe
+      # before cl.exe, then links the MSVC Qt libraries with mingw ld.
+      - name: Select the MSVC toolchain
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (-not $install) { throw "MSVC toolchain not found" }
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          $captured = cmd.exe /d /c "call `"$vcvars`" >nul && set"
+          foreach ($line in $captured) {
+            if ($line -match '^(PATH|INCLUDE|LIB|LIBPATH)=(.*)$') {
+              $name = $Matches[1]
+              $value = $Matches[2]
+              if ($name -eq 'PATH') {
+                # System32 tar must precede Git usr\bin. MSYS tar treats "D:" as a host.
+                $system32 = Join-Path $env:SystemRoot 'System32'
+                $parts = @($system32)
+                foreach ($entry in ($value -split ';')) {
+                  if (-not $entry) { continue }
+                  if ($entry -match '(?i)mingw') { continue }
+                  if ($entry -ieq $system32) { continue }
+                  $parts += $entry
+                }
+                $value = $parts -join ';'
+              }
+              Add-Content -Path $env:GITHUB_ENV -Value "$name=$value" -Encoding utf8NoBOM
+            }
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "CC=cl" -Encoding utf8NoBOM
+          Add-Content -Path $env:GITHUB_ENV -Value "CXX=cl" -Encoding utf8NoBOM
+
       - name: Install Kirigami
         shell: bash
-        run: cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            # Git bash puts usr/bin ahead of the PATH set above. MSYS tar treats "D:" as a host.
+            win_system32="${SYSTEMROOT:-C:/Windows}"
+            win_system32="${win_system32//\\//}/System32"
+            export PATH="${win_system32}:${PATH}"
+          fi
+          cmake -DQT_PREFIX="$QT_ROOT_DIR" -DWORK_DIR="$RUNNER_TEMP/kirigami" -P cmake/BuildKirigami.cmake
 
       - name: Configure
         shell: bash
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DKBEXTRACT_PACKAGE_VERSION="$PACKAGE_VERSION"
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            win_system32="${SYSTEMROOT:-C:/Windows}"
+            win_system32="${win_system32//\\//}/System32"
+            export PATH="${win_system32}:${PATH}"
+          fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DKBEXTRACT_PACKAGE_VERSION="$PACKAGE_VERSION"
 
       - name: Build
         run: cmake --build build --parallel --config Release
 
+      - name: Provide Qt fonts
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # This Qt build loads fonts only from its lib/fonts directory. Without
+          # them every glyph is one em wide and QFontInfo reports a negative size.
+          font_dir="${QT_ROOT_DIR}/lib/fonts"
+          mkdir -p "$font_dir"
+          win_fonts="${SYSTEMROOT:-C:/Windows}"
+          win_fonts="${win_fonts//\\//}/Fonts"
+          copied=0
+          for name in segoeui.ttf segoeuib.ttf segoeuii.ttf segoeuiz.ttf \
+                      consolas.ttf consola.ttf cour.ttf ariali.ttf \
+                      arial.ttf arialbd.ttf; do
+            if [[ -f "${win_fonts}/${name}" ]]; then
+              cp -f "${win_fonts}/${name}" "${font_dir}/"
+              copied=$((copied + 1))
+            fi
+          done
+          if (( copied == 0 )); then
+            shopt -s nullglob nocaseglob
+            for file in "${win_fonts}"/*.ttf; do
+              cp -f "$file" "${font_dir}/"
+              copied=$((copied + 1))
+              if (( copied >= 8 )); then
+                break
+              fi
+            done
+          fi
+          if (( copied == 0 )); then
+            echo "No Windows fonts were copied into ${font_dir}" >&2
+            exit 1
+          fi
+          echo "Copied ${copied} fonts into ${font_dir}"
+
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Show Qt Test logs
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=(build/test-results/*.txt)
+          if (( ${#logs[@]} == 0 )); then
+            echo "No Qt Test logs were written under build/test-results" >&2
+            exit 1
+          fi
+          for log in "${logs[@]}"; do
+            echo "===== ${log} ====="
+            cat "$log"
+          done
 
       - name: Download Linux deployment tools
         if: matrix.platform == 'linux'

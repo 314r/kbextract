@@ -210,6 +210,7 @@ Kirigami.AbstractApplicationWindow {
                     Label {
                         objectName: "settingsSectionTitle"
                         Layout.fillWidth: true
+                        Layout.minimumWidth: implicitWidth
                         text: settingsWindow.sections[settingsWindow.currentSectionIndex].title
                         font.family: Theme.uiFont
                         font.pointSize: Theme.fontPointSizeBody

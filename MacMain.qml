@@ -438,10 +438,16 @@ ApplicationWindow {
 
                 RowLayout {
                     id: copyButtons
+                    anchors.left: parent.left
                     anchors.right: parent.right
+                    anchors.leftMargin: 24
                     anchors.rightMargin: 24
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                    }
                     MacCopyButton {
                         objectName: "copyTextButton"
                         action: copyTextAction

@@ -303,12 +303,29 @@ ApplicationWindow {
                     objectName: "deviceSelector"
 
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    // Windows fonts can make "No Kobo device" wider than the column.
+                    // Bleed through the full 16px sidebar margin, then drop the label
+                    // inset, so the text still fits at 200% without leaving the sidebar.
+                    readonly property real sidebarMargin: 16
+                    readonly property real indicatorGap: 2
+                    readonly property real textWidth: contentItem.implicitWidth
+                    readonly property real hostWidth: parent.width
+                    readonly property real neededWidth: textWidth + indicator.implicitWidth + indicatorGap
+                    readonly property real bleed: Math.min(sidebarMargin, Math.max(0, Math.ceil((neededWidth - hostWidth) / 2)))
+                    readonly property real boxWidth: Math.max(0, hostWidth + 2 * bleed)
+                    readonly property real fittedLabelInset: boxWidth <= 0 ? 0 : Math.max(0,
+                        (boxWidth - textWidth - indicator.implicitWidth - indicatorGap) / 2)
+                    readonly property real labelInset: Math.min(Theme.controlHorizontalPadding, fittedLabelInset)
+                    Layout.leftMargin: -bleed
+                    Layout.rightMargin: -bleed
                     implicitHeight: Math.max(Theme.controlMinHeight,
                         Math.ceil(Math.max(contentItem.implicitHeight, indicator.implicitHeight))
                         + topPadding + bottomPadding)
                     height: implicitHeight
-                    leftPadding: Theme.controlHorizontalPadding
-                    rightPadding: Theme.controlHorizontalPadding + indicator.implicitWidth + spacing
+                    leftPadding: labelInset
+                    rightPadding: labelInset + indicator.implicitWidth
+                    spacing: 0
                     verticalPadding: Theme.controlVerticalPadding
                     model: koboLibrary.devices
                     textRole: "displayName"
@@ -353,7 +370,7 @@ ApplicationWindow {
                     }
 
                     indicator: Text {
-                        x: deviceSelector.width - width - Theme.controlHorizontalPadding
+                        x: deviceSelector.width - width - deviceSelector.labelInset
                         y: (deviceSelector.height - height) / 2
                         text: qsTr("v")
                         color: deviceSelector.enabled ? Theme.textMuted : Theme.textFaint

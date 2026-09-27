@@ -87,8 +87,18 @@ buttons export the complete document in the chosen format.
 ## Kobo devices
 
 The app checks mounted volumes every two seconds for
-`.kobo/KoboReader.sqlite`. Connected devices appear automatically; disconnected
-databases are closed and restored if the same mount returns. Refresh forces a
+`.kobo/KoboReader.sqlite`. Connected devices appear automatically. Each
+successful read replaces that Kobo's saved library with its current annotated
+books and highlight rows. The snapshot is keyed by `SerialNumber` from
+`.kobo/Kobo/Kobo eReader.conf` beside the database (the volume root, or the
+parent of a manually opened `.kobo/KoboReader.sqlite`). Without a serial, the
+key is the database path. Snapshots are stored in `library.sqlite` in the app
+data directory; the device database itself is left unchanged.
+
+Unplugging keeps that library in the device list, labeled `(saved)`, including
+the book that was open. Plug the same Kobo back in and kbextract reads it
+again, replacing the snapshot so deletions on the device are removed here too.
+A second connected device does not take the selection. Refresh forces a
 database reload; Browse (Linux/Windows) or Open…
 (macOS) selects a database manually.
 
@@ -135,10 +145,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 CI runs the suite on Linux x86-64, Windows x64, and both Apple Silicon and
-Intel macOS runners. Mac UI tests use isolated database fixtures and settings;
-the custom UI regression tests continue to run on all platforms. Native menus,
-file dialogs, VoiceOver, and live system appearance changes also require an
-interactive Mac check; offscreen tests do not verify their native rendering.
+Intel macOS runners. Mac UI tests use the cocoa platform, isolated database
+fixtures, and settings; the custom UI regression tests continue to run on all
+platforms. Native menus, file dialogs, VoiceOver, and live system appearance
+changes also require an interactive Mac check.
 
 ## Packages
 
